@@ -49,8 +49,7 @@ interface RecommendationEventDao {
     @Query("UPDATE recommendation_events SET response = :response, respondedAtEpochMs = :respondedAtEpochMs WHERE id = :eventId")
     suspend fun recordResponse(eventId: Long, response: String, respondedAtEpochMs: Long)
 
-    @Query(
-        """
+    @Query("""
         UPDATE recommendation_events
         SET outcomeSelfReportId = :selfReportId
         WHERE id = (
@@ -59,8 +58,7 @@ interface RecommendationEventDao {
             ORDER BY respondedAtEpochMs DESC
             LIMIT 1
         )
-        """,
-    )
+    """)
     suspend fun attachOutcomeToLatestResponded(selfReportId: Long)
 
     @Query("SELECT * FROM recommendation_events ORDER BY presentedAtEpochMs DESC LIMIT 100")
@@ -75,8 +73,7 @@ interface InterventionEventDao {
     @Query("UPDATE intervention_events SET response = :response, respondedAtEpochMs = :respondedAtEpochMs WHERE id = :eventId")
     suspend fun recordResponse(eventId: Long, response: String, respondedAtEpochMs: Long)
 
-    @Query(
-        """
+    @Query("""
         UPDATE intervention_events
         SET outcomeSelfReportId = :selfReportId
         WHERE id = (
@@ -85,8 +82,7 @@ interface InterventionEventDao {
             ORDER BY respondedAtEpochMs DESC
             LIMIT 1
         )
-        """,
-    )
+    """)
     suspend fun attachOutcomeToLatestResponded(selfReportId: Long)
 
     @Query("SELECT * FROM intervention_events ORDER BY presentedAtEpochMs DESC LIMIT 100")
@@ -109,15 +105,8 @@ interface SessionDao {
 }
 
 @Database(
-    entities = [
-        SelfReportEntity::class,
-        ContextSnapshotEntity::class,
-        TaskEntity::class,
-        RecommendationEventEntity::class,
-        InterventionEventEntity::class,
-        SessionEntity::class,
-    ],
-    version = 8,
+    entities = [SelfReportEntity::class, ContextSnapshotEntity::class, TaskEntity::class, RecommendationEventEntity::class, InterventionEventEntity::class, SessionEntity::class],
+    version = 9,
     exportSchema = true,
 )
 abstract class FlowDatabase : RoomDatabase() {
