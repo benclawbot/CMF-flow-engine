@@ -17,11 +17,21 @@ interface SelfReportDao {
     fun observeRecent(): Flow<List<SelfReportEntity>>
 }
 
+@Dao
+interface ContextSnapshotDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(snapshot: ContextSnapshotEntity): Long
+
+    @Query("SELECT * FROM context_snapshots WHERE selfReportId = :selfReportId LIMIT 1")
+    suspend fun forReport(selfReportId: Long): ContextSnapshotEntity?
+}
+
 @Database(
-    entities = [SelfReportEntity::class],
-    version = 1,
+    entities = [SelfReportEntity::class, ContextSnapshotEntity::class],
+    version = 2,
     exportSchema = true,
 )
 abstract class FlowDatabase : RoomDatabase() {
     abstract fun selfReportDao(): SelfReportDao
+    abstract fun contextSnapshotDao(): ContextSnapshotDao
 }
