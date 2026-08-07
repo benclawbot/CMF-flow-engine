@@ -13,7 +13,15 @@ class FlowApplication : Application() {
             FlowDatabase::class.java,
             "cmf-flow.db",
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+            .addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+                MIGRATION_6_7,
+                MIGRATION_7_8,
+            )
             .build()
     }
 
@@ -112,6 +120,25 @@ class FlowApplication : Application() {
                     )
                 """.trimIndent())
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_intervention_events_outcomeSelfReportId ON intervention_events(outcomeSelfReportId)")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS sessions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        taskId INTEGER,
+                        taskTitle TEXT,
+                        taskDomain TEXT,
+                        startedAtEpochMs INTEGER NOT NULL,
+                        endedAtEpochMs INTEGER,
+                        struggleCount INTEGER NOT NULL,
+                        status TEXT NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sessions_taskId ON sessions(taskId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sessions_startedAtEpochMs ON sessions(startedAtEpochMs)")
             }
         }
     }
