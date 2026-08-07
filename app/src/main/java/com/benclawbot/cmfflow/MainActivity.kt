@@ -14,7 +14,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.benclawbot.cmfflow.data.SelfReportEntity
 import com.benclawbot.cmfflow.health.HealthConnectProbe
+import com.benclawbot.cmfflow.health.HealthContextCollector
 import com.benclawbot.cmfflow.health.ProbeResult
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -38,12 +41,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val database = (application as FlowApplication).database
         val probe = HealthConnectProbe(this)
+        val contextCollector = HealthContextCollector(this)
 
         setContent {
             MaterialTheme {
                 FlowHome(
                     probe = probe,
-                    save = { database.selfReportDao().insert(it) },
+                    save = { report ->
+                        val reportId = database.selfReportDao().insert(report)
+                        val snapshot = contextCollector.collect(reportId, report.capturedAtEpochMs)
+                        database.contextSnapshotDao().insert(snapshot)
+                        reportId
+                    },
                 )
             }
         }
@@ -62,6 +71,12 @@ private fun FlowHome(
     var reward by remember { mutableStateOf(3f) }
     var presence by remember { mutableStateOf(3f) }
     var fatigue by remember { mutableStateOf(2f) }
+    var activity by remember { mutableStateOf("") }
+    var domain by remember { mutableStateOf("") }
+    var advanced by remember { mutableStateOf(false) }
+    var difficulty by remember { mutableStateOf(3f) }
+    var goalClarity by remember { mutableStateOf(3f) }
+    var perceivedControl by remember { mutableStateOf(3f) }
     var status by remember { mutableStateOf("Ready") }
     var results by remember { mutableStateOf<List<ProbeResult>>(emptyList()) }
 
@@ -79,7 +94,7 @@ private fun FlowHome(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("CMF Flow Engine", style = MaterialTheme.typography.headlineMedium)
-        Text("Ground truth first: quick subjective report, then context.")
+        Text("Quick subjective label first. Context is optional and health context is captured automatically.")
 
         Score("Overall flow", flow) { flow = it }
         Score("Absorption", absorption) { absorption = it }
@@ -88,27 +103,55 @@ private fun FlowHome(
         Score("Presence", presence) { presence = it }
         Score("Fatigue", fatigue) { fatigue = it }
 
+        OutlinedTextField(
+            value = activity,
+            onValueChange = { activity = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Activity (optional)") },
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = domain,
+            onValueChange = { domain = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Domain (optional, e.g. work, cooking, family)") },
+            singleLine = true,
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Switch(checked = advanced, onCheckedChange = { advanced = it })
+            Text("Add antecedent context")
+        }
+        if (advanced) {
+            Text("These are predictors, not part of the flow label.")
+            Score("Task difficulty", difficulty) { difficulty = it }
+            Score("Goal clarity", goalClarity) { goalClarity = it }
+            Score("Perceived control", perceivedControl) { perceivedControl = it }
+        }
+
         Button(
             onClick = {
                 scope.launch {
+                    val capturedAt = System.currentTimeMillis()
+                    status = "Saving report and context…"
                     save(
                         SelfReportEntity(
-                            capturedAtEpochMs = System.currentTimeMillis(),
+                            capturedAtEpochMs = capturedAt,
                             flowScore = flow.toInt(),
                             absorption = absorption.toInt(),
                             effortlessControl = effortless.toInt(),
                             intrinsicReward = reward.toInt(),
                             presence = presence.toInt(),
                             fatigue = fatigue.toInt(),
-                            activityLabel = null,
-                            domain = null,
-                            taskDifficulty = null,
-                            goalClarity = null,
-                            perceivedControl = null,
+                            activityLabel = activity.trim().ifBlank { null },
+                            domain = domain.trim().ifBlank { null },
+                            taskDifficulty = difficulty.toInt().takeIf { advanced },
+                            goalClarity = goalClarity.toInt().takeIf { advanced },
+                            perceivedControl = perceivedControl.toInt().takeIf { advanced },
                             notes = null,
                         ),
                     )
-                    status = "Self-report saved locally"
+                    status = "Report + context snapshot saved locally"
                 }
             },
         ) { Text("Save report") }
