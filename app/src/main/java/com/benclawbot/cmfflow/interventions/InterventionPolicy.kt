@@ -4,6 +4,7 @@ import com.benclawbot.cmfflow.data.SelfReportEntity
 
 enum class InterventionAction {
     CONTINUE,
+    REDUCE_INTERRUPTION,
     SWITCH_TASK,
     REDUCE_DIFFICULTY,
     ASK_AI,
@@ -21,6 +22,8 @@ fun recommendIntervention(
     latestReport: SelfReportEntity?,
     minutesOnCurrentTask: Int? = null,
     repeatedStruggle: Boolean = false,
+    learnedFragmentationHarm: Boolean = false,
+    currentlyHighFragmentation: Boolean = false,
 ): InterventionRecommendation {
     if (latestReport == null) {
         return InterventionRecommendation(
@@ -46,6 +49,10 @@ fun recommendIntervention(
         repeatedStruggle && difficulty != null && difficulty >= 4 -> InterventionRecommendation(
             InterventionAction.ASK_AI,
             listOf("repeated_struggle", "high_task_difficulty"),
+        )
+        learnedFragmentationHarm && currentlyHighFragmentation -> InterventionRecommendation(
+            InterventionAction.REDUCE_INTERRUPTION,
+            listOf("personal_fragmentation_harm_evidence", "current_fragmentation_high"),
         )
         flow <= 1 && presence <= 2 && difficulty != null && difficulty >= 4 -> InterventionRecommendation(
             InterventionAction.REDUCE_DIFFICULTY,
