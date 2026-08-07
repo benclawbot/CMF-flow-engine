@@ -13,7 +13,7 @@ class FlowApplication : Application() {
             FlowDatabase::class.java,
             "cmf-flow.db",
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
     }
 
@@ -73,6 +73,28 @@ class FlowApplication : Application() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS recommendation_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        taskId INTEGER NOT NULL,
+                        taskTitle TEXT NOT NULL,
+                        presentedAtEpochMs INTEGER NOT NULL,
+                        score REAL NOT NULL,
+                        reasonsSnapshot TEXT NOT NULL,
+                        response TEXT,
+                        respondedAtEpochMs INTEGER,
+                        outcomeSelfReportId INTEGER
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_recommendation_events_taskId ON recommendation_events(taskId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_recommendation_events_outcomeSelfReportId ON recommendation_events(outcomeSelfReportId)")
             }
         }
     }
