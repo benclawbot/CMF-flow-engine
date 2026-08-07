@@ -10,7 +10,11 @@ data class RankedTask(
     val reasons: List<String>,
 )
 
-fun rankTasks(tasks: List<TaskEntity>, latestReport: SelfReportEntity?): List<RankedTask> {
+fun rankTasks(
+    tasks: List<TaskEntity>,
+    latestReport: SelfReportEntity?,
+    historicalReports: List<SelfReportEntity> = emptyList(),
+): List<RankedTask> {
     val fatigue = latestReport?.fatigue ?: 2
     val flow = latestReport?.flowScore ?: 3
     val presence = latestReport?.presence ?: 3
@@ -26,13 +30,16 @@ fun rankTasks(tasks: List<TaskEntity>, latestReport: SelfReportEntity?): List<Ra
             val fitPenalty = abs(task.difficultyScore - preferredDifficulty) * 1.5
             val fatiguePenalty = if (fatigue >= 4) task.difficultyScore * 1.25 else 0.0
             val durationPenalty = if (fatigue >= 4 && task.estimatedMinutes > 45) 2.0 else 0.0
-            val score = task.valueScore * 2.0 + task.urgencyScore * 1.5 - fitPenalty - fatiguePenalty - durationPenalty
+            val evidence = personalEvidenceFor(task.domain, historicalReports)
+            val score = task.valueScore * 2.0 + task.urgencyScore * 1.5 - fitPenalty - fatiguePenalty - durationPenalty + evidence.adjustment
             val reasons = buildList {
                 add("value=${task.valueScore}")
                 add("urgency=${task.urgencyScore}")
                 add("difficulty_fit=${task.difficultyScore}/$preferredDifficulty")
                 if (fatigue >= 4) add("fatigue_guardrail")
                 if (durationPenalty > 0) add("long_task_penalty")
+                addAll(evidence.reasons)
+                if (historicalReports.isNotEmpty() && evidence.reasons.isEmpty()) add("personal_evidence_insufficient")
             }
             RankedTask(task, score, reasons)
         }
