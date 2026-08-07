@@ -29,6 +29,32 @@ class InterventionPolicyTest {
         assertEquals(InterventionAction.ASK_AI, recommendIntervention(report, repeatedStruggle = true).action)
     }
 
+    @Test
+    fun learnedFragmentationHarmCanSuggestReducingInterruptions() {
+        val report = report(flow = 3, presence = 3, fatigue = 2, difficulty = 3)
+        assertEquals(
+            InterventionAction.REDUCE_INTERRUPTION,
+            recommendIntervention(
+                report,
+                learnedFragmentationHarm = true,
+                currentlyHighFragmentation = true,
+            ).action,
+        )
+    }
+
+    @Test
+    fun fatigueGuardrailBeatsFragmentationIntervention() {
+        val report = report(flow = 3, presence = 3, fatigue = 5, difficulty = 3)
+        assertEquals(
+            InterventionAction.STOP,
+            recommendIntervention(
+                report,
+                learnedFragmentationHarm = true,
+                currentlyHighFragmentation = true,
+            ).action,
+        )
+    }
+
     private fun report(flow: Int, presence: Int, fatigue: Int, difficulty: Int) = SelfReportEntity(
         capturedAtEpochMs = 1,
         flowScore = flow,
