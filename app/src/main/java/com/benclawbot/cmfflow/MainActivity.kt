@@ -1,9 +1,12 @@
 package com.benclawbot.cmfflow
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.benclawbot.cmfflow.analytics.summarize
@@ -33,6 +37,7 @@ import com.benclawbot.cmfflow.data.SelfReportEntity
 import com.benclawbot.cmfflow.health.HealthConnectProbe
 import com.benclawbot.cmfflow.health.HealthContextCollector
 import com.benclawbot.cmfflow.health.ProbeResult
+import com.benclawbot.cmfflow.reminders.CheckInReminderScheduler
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -69,6 +74,7 @@ private fun FlowHome(
     recentReports: List<SelfReportEntity>,
     save: suspend (SelfReportEntity) -> Long,
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var flow by remember { mutableStateOf(3f) }
     var absorption by remember { mutableStateOf(3f) }
@@ -85,10 +91,20 @@ private fun FlowHome(
     var status by remember { mutableStateOf("Ready") }
     var results by remember { mutableStateOf<List<ProbeResult>>(emptyList()) }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
+    val healthPermissionLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract(),
     ) { granted ->
         status = if (granted.containsAll(probe.permissions)) "Health permissions granted" else "Some health permissions were denied"
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            CheckInReminderScheduler.enable(context)
+            status = "Check-in reminders enabled"
+        } else {
+            status = "Notification permission denied; reminders not enabled"
+        }
     }
 
     Column(
@@ -163,10 +179,27 @@ private fun FlowHome(
 
         LearningPreview(recentReports)
 
+        Text("Sampling reminders", style = MaterialTheme.typography.titleLarge)
+        Text("Optional local reminders run about every 4 hours during 08:00–21:59. They can be disabled at any time.")
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    CheckInReminderScheduler.enable(context)
+                    status = "Check-in reminders enabled"
+                }
+            }) { Text("Enable") }
+            Button(onClick = {
+                CheckInReminderScheduler.disable(context)
+                status = "Check-in reminders disabled"
+            }) { Text("Disable") }
+        }
+
         Text("Health Connect probe", style = MaterialTheme.typography.titleLarge)
         Text("Reads the last 7 days and reports record origin plus time coverage. No health data is uploaded.")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = { permissionLauncher.launch(probe.permissions) }) {
+            Button(onClick = { healthPermissionLauncher.launch(probe.permissions) }) {
                 Text("Grant access")
             }
             Button(onClick = {
