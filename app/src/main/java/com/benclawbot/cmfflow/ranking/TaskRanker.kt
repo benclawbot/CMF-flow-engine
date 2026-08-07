@@ -29,6 +29,7 @@ fun rankTasks(
         else -> 3
     }
     val contextEvidence = contextEvidenceFor(currentContext, historicalReports, historicalContexts)
+    val fragmentationEvidence = fragmentationEvidenceFor(currentContext, historicalReports, historicalContexts)
 
     return tasks
         .filter { it.status == "open" }
@@ -39,7 +40,10 @@ fun rankTasks(
             val personalEvidence = personalEvidenceFor(task.domain, historicalReports)
             val outcomeEvidence = outcomeEvidenceFor(task.domain, recommendationEvents, historicalReports)
             val evidenceAdjustment = (
-                personalEvidence.adjustment + contextEvidence.adjustment + outcomeEvidence.adjustment
+                personalEvidence.adjustment +
+                    contextEvidence.adjustment +
+                    fragmentationEvidence.adjustment +
+                    outcomeEvidence.adjustment
             ).coerceIn(-3.5, 3.5)
             val score = task.valueScore * 2.0 + task.urgencyScore * 1.5 - fitPenalty - fatiguePenalty - durationPenalty + evidenceAdjustment
             val reasons = buildList {
@@ -50,11 +54,13 @@ fun rankTasks(
                 if (durationPenalty > 0) add("long_task_penalty")
                 addAll(personalEvidence.reasons)
                 addAll(contextEvidence.reasons)
+                addAll(fragmentationEvidence.reasons)
                 addAll(outcomeEvidence.reasons)
                 if (
                     historicalReports.isNotEmpty() &&
                     personalEvidence.reasons.isEmpty() &&
                     contextEvidence.reasons.isEmpty() &&
+                    fragmentationEvidence.reasons.isEmpty() &&
                     outcomeEvidence.reasons.isEmpty()
                 ) {
                     add("personal_evidence_insufficient")
