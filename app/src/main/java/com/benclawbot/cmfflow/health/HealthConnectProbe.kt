@@ -6,6 +6,7 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -32,33 +33,66 @@ class HealthConnectProbe(private val context: Context) {
         val range = TimeRangeFilter.between(start, end)
 
         return listOf(
-            probeType("heart_rate") { client.readRecords(ReadRecordsRequest(HeartRateRecord::class, range)).records },
-            probeType("sleep") { client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range)).records },
-            probeType("steps") { client.readRecords(ReadRecordsRequest(StepsRecord::class, range)).records },
-            probeType("oxygen_saturation") { client.readRecords(ReadRecordsRequest(OxygenSaturationRecord::class, range)).records },
-            probeType("exercise") { client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, range)).records },
+            runCatching {
+                val records = client.readRecords(ReadRecordsRequest(HeartRateRecord::class, range)).records
+                result(
+                    name = "heart_rate",
+                    records = records,
+                    instants = records.flatMap { it.samples.map { sample -> sample.time } },
+                    dataPointCount = records.sumOf { it.samples.size },
+                )
+            }.getOrElse { errorResult("heart_rate", it) },
+            runCatching {
+                val records = client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range)).records
+                result("sleep", records, records.flatMap { listOf(it.startTime, it.endTime) })
+            }.getOrElse { errorResult("sleep", it) },
+            runCatching {
+                val records = client.readRecords(ReadRecordsRequest(StepsRecord::class, range)).records
+                result("steps", records, records.flatMap { listOf(it.startTime, it.endTime) })
+            }.getOrElse { errorResult("steps", it) },
+            runCatching {
+                val records = client.readRecords(ReadRecordsRequest(OxygenSaturationRecord::class, range)).records
+                result("oxygen_saturation", records, records.map { it.time })
+            }.getOrElse { errorResult("oxygen_saturation", it) },
+            runCatching {
+                val records = client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, range)).records
+                result("exercise", records, records.flatMap { listOf(it.startTime, it.endTime) })
+            }.getOrElse { errorResult("exercise", it) },
         )
     }
 
-    private suspend fun <T : androidx.health.connect.client.records.Record> probeType(
+    private fun <T : Record> result(
         name: String,
-        read: suspend () -> List<T>,
-    ): ProbeResult = runCatching {
-        val records = read()
-        ProbeResult(
-            type = name,
-            recordCount = records.size,
-            origins = records.map { it.metadata.dataOrigin.packageName }.toSet(),
-            error = null,
-        )
-    }.getOrElse {
-        ProbeResult(name, 0, emptySet(), it.javaClass.simpleName + ": " + (it.message ?: "unknown"))
-    }
+        records: List<T>,
+        instants: List<Instant>,
+        dataPointCount: Int = records.size,
+    ): ProbeResult = ProbeResult(
+        type = name,
+        recordCount = records.size,
+        dataPointCount = dataPointCount,
+        origins = records.map { it.metadata.dataOrigin.packageName }.toSet(),
+        earliestEpochMs = instants.minOrNull()?.toEpochMilli(),
+        latestEpochMs = instants.maxOrNull()?.toEpochMilli(),
+        error = null,
+    )
+
+    private fun errorResult(name: String, throwable: Throwable) = ProbeResult(
+        type = name,
+        recordCount = 0,
+        dataPointCount = 0,
+        origins = emptySet(),
+        earliestEpochMs = null,
+        latestEpochMs = null,
+        error = throwable.javaClass.simpleName + ": " + (throwable.message ?: "unknown"),
+    )
 }
 
 data class ProbeResult(
     val type: String,
     val recordCount: Int,
+    val dataPointCount: Int,
     val origins: Set<String>,
+    val earliestEpochMs: Long?,
+    val latestEpochMs: Long?,
     val error: String?,
 )
