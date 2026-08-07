@@ -29,6 +29,9 @@ import com.benclawbot.cmfflow.data.SelfReportEntity
 import com.benclawbot.cmfflow.health.HealthConnectProbe
 import com.benclawbot.cmfflow.health.ProbeResult
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,6 +114,7 @@ private fun FlowHome(
         ) { Text("Save report") }
 
         Text("Health Connect probe", style = MaterialTheme.typography.titleLarge)
+        Text("Reads the last 7 days and reports record origin plus time coverage. No health data is uploaded.")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(onClick = { permissionLauncher.launch(probe.permissions) }) {
                 Text("Grant access")
@@ -127,11 +131,27 @@ private fun FlowHome(
         }
 
         Text(status)
-        results.forEach { result ->
-            val originText = if (result.origins.isEmpty()) "no origins" else result.origins.joinToString()
-            Text("${result.type}: ${result.recordCount} records · $originText${result.error?.let { " · $it" } ?: ""}")
-        }
+        results.forEach { result -> ProbeResultView(result) }
     }
+}
+
+@Composable
+private fun ProbeResultView(result: ProbeResult) {
+    val originText = if (result.origins.isEmpty()) "none" else result.origins.joinToString()
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(result.type, style = MaterialTheme.typography.titleMedium)
+        Text("Records: ${result.recordCount} · data points: ${result.dataPointCount}")
+        Text("Origins: $originText")
+        Text("Coverage: ${formatEpoch(result.earliestEpochMs)} → ${formatEpoch(result.latestEpochMs)}")
+        result.error?.let { Text("Error: $it") }
+    }
+}
+
+private fun formatEpoch(epochMs: Long?): String {
+    if (epochMs == null) return "none"
+    return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        .withZone(ZoneId.systemDefault())
+        .format(Instant.ofEpochMilli(epochMs))
 }
 
 @Composable
