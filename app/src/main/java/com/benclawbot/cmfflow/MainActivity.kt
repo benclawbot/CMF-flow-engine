@@ -22,6 +22,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.benclawbot.cmfflow.analytics.summarize
 import com.benclawbot.cmfflow.data.ContextSnapshotEntity
+import com.benclawbot.cmfflow.data.RecommendationEventEntity
 import com.benclawbot.cmfflow.data.SelfReportEntity
 import com.benclawbot.cmfflow.data.TaskEntity
 import com.benclawbot.cmfflow.health.HealthConnectProbe
@@ -65,10 +67,15 @@ class MainActivity : ComponentActivity() {
                     openTasks = openTasks,
                     addTask = { database.taskDao().insert(it) },
                     markTaskDone = { database.taskDao().markDone(it) },
+                    recordRecommendation = { database.recommendationEventDao().insert(it) },
+                    recordRecommendationResponse = { eventId, response ->
+                        database.recommendationEventDao().recordResponse(eventId, response, System.currentTimeMillis())
+                    },
                     save = { report ->
                         val reportId = database.selfReportDao().insert(report)
                         val snapshot = contextCollector.collect(reportId, report.capturedAtEpochMs)
                         database.contextSnapshotDao().insert(snapshot)
+                        database.recommendationEventDao().attachOutcomeToLatestResponded(reportId)
                         reportId
                     },
                 )
@@ -85,6 +92,8 @@ private fun FlowHome(
     openTasks: List<TaskEntity>,
     addTask: suspend (TaskEntity) -> Long,
     markTaskDone: suspend (Long) -> Unit,
+    recordRecommendation: suspend (RecommendationEventEntity) -> Long,
+    recordRecommendationResponse: suspend (Long, String) -> Unit,
     save: suspend (SelfReportEntity) -> Long,
 ) {
     val context = LocalContext.current
@@ -107,6 +116,8 @@ private fun FlowHome(
     var taskUrgency by remember { mutableStateOf(3f) }
     var taskDifficulty by remember { mutableStateOf(3f) }
     var taskMinutes by remember { mutableStateOf("30") }
+    var activeRecommendationEventId by remember { mutableStateOf<Long?>(null) }
+    var recommendationResponse by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf("Ready") }
     var results by remember { mutableStateOf<List<ProbeResult>>(emptyList()) }
 
@@ -178,7 +189,7 @@ private fun FlowHome(
                         notes = null,
                     ),
                 )
-                status = "Report + context snapshot saved locally"
+                status = "Report + context snapshot saved locally; eligible recommendation outcome linked"
             }
         }) { Text("Save report") }
 
@@ -220,9 +231,48 @@ private fun FlowHome(
             historicalContexts = recentContexts,
         )
         ranked.firstOrNull()?.let { recommendation ->
+            LaunchedEffect(recommendation.task.id, recommendation.score) {
+                activeRecommendationEventId = recordRecommendation(
+                    RecommendationEventEntity(
+                        taskId = recommendation.task.id,
+                        taskTitle = recommendation.task.title,
+                        score = recommendation.score,
+                        reasonsSnapshot = recommendation.reasons.joinToString("|"),
+                    ),
+                )
+                recommendationResponse = null
+            }
+
             Text("Suggested now", style = MaterialTheme.typography.titleMedium)
             Text(recommendation.task.title)
             Text("Score %.1f · %s".format(recommendation.score, recommendation.reasons.joinToString(" · ")))
+            if (recommendationResponse == null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        scope.launch {
+                            activeRecommendationEventId?.let { recordRecommendationResponse(it, "accepted") }
+                            recommendationResponse = "accepted"
+                            status = "Recommendation accepted; your next check-in will be linked as its outcome"
+                        }
+                    }) { Text("Accept") }
+                    Button(onClick = {
+                        scope.launch {
+                            activeRecommendationEventId?.let { recordRecommendationResponse(it, "rejected") }
+                            recommendationResponse = "rejected"
+                            status = "Recommendation rejected; your next check-in will be linked as its outcome"
+                        }
+                    }) { Text("Reject") }
+                    Button(onClick = {
+                        scope.launch {
+                            activeRecommendationEventId?.let { recordRecommendationResponse(it, "ignored") }
+                            recommendationResponse = "ignored"
+                            status = "Recommendation ignored; your next check-in will be linked as its outcome"
+                        }
+                    }) { Text("Ignore") }
+                }
+            } else {
+                Text("Response recorded: $recommendationResponse")
+            }
             Button(onClick = { scope.launch { markTaskDone(recommendation.task.id) } }) { Text("Mark suggested task done") }
         } ?: Text("No open tasks yet.")
 
