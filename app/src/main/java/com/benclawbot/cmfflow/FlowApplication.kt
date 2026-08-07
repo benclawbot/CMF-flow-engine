@@ -8,11 +8,7 @@ import com.benclawbot.cmfflow.data.FlowDatabase
 
 class FlowApplication : Application() {
     val database: FlowDatabase by lazy {
-        Room.databaseBuilder(
-            applicationContext,
-            FlowDatabase::class.java,
-            "cmf-flow.db",
-        )
+        Room.databaseBuilder(applicationContext, FlowDatabase::class.java, "cmf-flow.db")
             .addMigrations(
                 MIGRATION_1_2,
                 MIGRATION_2_3,
@@ -21,6 +17,7 @@ class FlowApplication : Application() {
                 MIGRATION_5_6,
                 MIGRATION_6_7,
                 MIGRATION_7_8,
+                MIGRATION_8_9,
             )
             .build()
     }
@@ -139,6 +136,16 @@ class FlowApplication : Application() {
                 """.trimIndent())
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_sessions_taskId ON sessions(taskId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_sessions_startedAtEpochMs ON sessions(startedAtEpochMs)")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE context_snapshots ADD COLUMN usageAccessGranted INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE context_snapshots ADD COLUMN appSwitchCount INTEGER")
+                db.execSQL("ALTER TABLE context_snapshots ADD COLUMN unlockCount INTEGER")
+                db.execSQL("ALTER TABLE context_snapshots ADD COLUMN screenInteractiveTransitions INTEGER")
+                db.execSQL("ALTER TABLE context_snapshots ADD COLUMN notificationCount INTEGER")
             }
         }
     }
