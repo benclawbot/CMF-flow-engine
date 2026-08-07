@@ -34,9 +34,11 @@ import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.benclawbot.cmfflow.analytics.summarize
 import com.benclawbot.cmfflow.data.SelfReportEntity
+import com.benclawbot.cmfflow.data.TaskEntity
 import com.benclawbot.cmfflow.health.HealthConnectProbe
 import com.benclawbot.cmfflow.health.HealthContextCollector
 import com.benclawbot.cmfflow.health.ProbeResult
+import com.benclawbot.cmfflow.ranking.rankTasks
 import com.benclawbot.cmfflow.reminders.CheckInReminderScheduler
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -52,10 +54,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val recentReports by database.selfReportDao().observeRecent().collectAsState(initial = emptyList())
+            val openTasks by database.taskDao().observeOpen().collectAsState(initial = emptyList())
             MaterialTheme {
                 FlowHome(
                     probe = probe,
                     recentReports = recentReports,
+                    openTasks = openTasks,
+                    addTask = { database.taskDao().insert(it) },
+                    markTaskDone = { database.taskDao().markDone(it) },
                     save = { report ->
                         val reportId = database.selfReportDao().insert(report)
                         val snapshot = contextCollector.collect(reportId, report.capturedAtEpochMs)
@@ -72,6 +78,9 @@ class MainActivity : ComponentActivity() {
 private fun FlowHome(
     probe: HealthConnectProbe,
     recentReports: List<SelfReportEntity>,
+    openTasks: List<TaskEntity>,
+    addTask: suspend (TaskEntity) -> Long,
+    markTaskDone: suspend (Long) -> Unit,
     save: suspend (SelfReportEntity) -> Long,
 ) {
     val context = LocalContext.current
@@ -88,6 +97,12 @@ private fun FlowHome(
     var difficulty by remember { mutableStateOf(3f) }
     var goalClarity by remember { mutableStateOf(3f) }
     var perceivedControl by remember { mutableStateOf(3f) }
+    var taskTitle by remember { mutableStateOf("") }
+    var taskDomain by remember { mutableStateOf("work") }
+    var taskValue by remember { mutableStateOf(3f) }
+    var taskUrgency by remember { mutableStateOf(3f) }
+    var taskDifficulty by remember { mutableStateOf(3f) }
+    var taskMinutes by remember { mutableStateOf("30") }
     var status by remember { mutableStateOf("Ready") }
     var results by remember { mutableStateOf<List<ProbeResult>>(emptyList()) }
 
@@ -124,20 +139,8 @@ private fun FlowHome(
         Score("Presence", presence) { presence = it }
         Score("Fatigue", fatigue) { fatigue = it }
 
-        OutlinedTextField(
-            value = activity,
-            onValueChange = { activity = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Activity (optional)") },
-            singleLine = true,
-        )
-        OutlinedTextField(
-            value = domain,
-            onValueChange = { domain = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Domain (optional, e.g. work, cooking, family)") },
-            singleLine = true,
-        )
+        OutlinedTextField(value = activity, onValueChange = { activity = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Activity (optional)") }, singleLine = true)
+        OutlinedTextField(value = domain, onValueChange = { domain = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Domain (optional, e.g. work, cooking, family)") }, singleLine = true)
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Switch(checked = advanced, onCheckedChange = { advanced = it })
@@ -150,42 +153,80 @@ private fun FlowHome(
             Score("Perceived control", perceivedControl) { perceivedControl = it }
         }
 
-        Button(
-            onClick = {
-                scope.launch {
-                    val capturedAt = System.currentTimeMillis()
-                    status = "Saving report and context…"
-                    save(
-                        SelfReportEntity(
-                            capturedAtEpochMs = capturedAt,
-                            flowScore = flow.toInt(),
-                            absorption = absorption.toInt(),
-                            effortlessControl = effortless.toInt(),
-                            intrinsicReward = reward.toInt(),
-                            presence = presence.toInt(),
-                            fatigue = fatigue.toInt(),
-                            activityLabel = activity.trim().ifBlank { null },
-                            domain = domain.trim().ifBlank { null },
-                            taskDifficulty = difficulty.toInt().takeIf { advanced },
-                            goalClarity = goalClarity.toInt().takeIf { advanced },
-                            perceivedControl = perceivedControl.toInt().takeIf { advanced },
-                            notes = null,
-                        ),
-                    )
-                    status = "Report + context snapshot saved locally"
-                }
-            },
-        ) { Text("Save report") }
+        Button(onClick = {
+            scope.launch {
+                val capturedAt = System.currentTimeMillis()
+                status = "Saving report and context…"
+                save(
+                    SelfReportEntity(
+                        capturedAtEpochMs = capturedAt,
+                        flowScore = flow.toInt(),
+                        absorption = absorption.toInt(),
+                        effortlessControl = effortless.toInt(),
+                        intrinsicReward = reward.toInt(),
+                        presence = presence.toInt(),
+                        fatigue = fatigue.toInt(),
+                        activityLabel = activity.trim().ifBlank { null },
+                        domain = domain.trim().ifBlank { null },
+                        taskDifficulty = difficulty.toInt().takeIf { advanced },
+                        goalClarity = goalClarity.toInt().takeIf { advanced },
+                        perceivedControl = perceivedControl.toInt().takeIf { advanced },
+                        notes = null,
+                    ),
+                )
+                status = "Report + context snapshot saved locally"
+            }
+        }) { Text("Save report") }
 
         LearningPreview(recentReports)
+
+        Text("Tasks", style = MaterialTheme.typography.titleLarge)
+        Text("Ranking is local and rule-based for now; reasons are shown explicitly.")
+        OutlinedTextField(value = taskTitle, onValueChange = { taskTitle = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Task title") }, singleLine = true)
+        OutlinedTextField(value = taskDomain, onValueChange = { taskDomain = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Task domain") }, singleLine = true)
+        Score("Task value", taskValue) { taskValue = it }
+        Score("Task urgency", taskUrgency) { taskUrgency = it }
+        Score("Task difficulty", taskDifficulty) { taskDifficulty = it }
+        OutlinedTextField(value = taskMinutes, onValueChange = { taskMinutes = it.filter(Char::isDigit) }, modifier = Modifier.fillMaxWidth(), label = { Text("Estimated minutes") }, singleLine = true)
+        Button(
+            enabled = taskTitle.isNotBlank(),
+            onClick = {
+                scope.launch {
+                    addTask(
+                        TaskEntity(
+                            title = taskTitle.trim(),
+                            domain = taskDomain.trim().ifBlank { "other" },
+                            valueScore = taskValue.toInt(),
+                            urgencyScore = taskUrgency.toInt(),
+                            difficultyScore = taskDifficulty.toInt(),
+                            estimatedMinutes = taskMinutes.toIntOrNull()?.coerceAtLeast(1) ?: 30,
+                        ),
+                    )
+                    taskTitle = ""
+                    status = "Task saved locally"
+                }
+            },
+        ) { Text("Add task") }
+
+        val ranked = rankTasks(openTasks, recentReports.firstOrNull())
+        ranked.firstOrNull()?.let { recommendation ->
+            Text("Suggested now", style = MaterialTheme.typography.titleMedium)
+            Text(recommendation.task.title)
+            Text("Score %.1f · %s".format(recommendation.score, recommendation.reasons.joinToString(" · ")))
+            Button(onClick = { scope.launch { markTaskDone(recommendation.task.id) } }) { Text("Mark suggested task done") }
+        } ?: Text("No open tasks yet.")
+
+        if (ranked.size > 1) {
+            Text("Next alternatives")
+            ranked.drop(1).take(3).forEach { item -> Text("${item.task.title} · ${"%.1f".format(item.score)}") }
+        }
 
         Text("Sampling reminders", style = MaterialTheme.typography.titleLarge)
         Text("Optional local reminders run about every 4 hours during 08:00–21:59. They can be disabled at any time.")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(onClick = {
-                if (Build.VERSION.SDK_INT >= 33) {
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else {
+                if (Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                else {
                     CheckInReminderScheduler.enable(context)
                     status = "Check-in reminders enabled"
                 }
@@ -199,18 +240,14 @@ private fun FlowHome(
         Text("Health Connect probe", style = MaterialTheme.typography.titleLarge)
         Text("Reads the last 7 days and reports record origin plus time coverage. No health data is uploaded.")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = { healthPermissionLauncher.launch(probe.permissions) }) {
-                Text("Grant access")
-            }
+            Button(onClick = { healthPermissionLauncher.launch(probe.permissions) }) { Text("Grant access") }
             Button(onClick = {
                 scope.launch {
                     status = "Probing last 7 days…"
                     results = probe.probe()
                     status = "Probe complete"
                 }
-            }) {
-                Text("Run probe")
-            }
+            }) { Text("Run probe") }
         }
 
         Text(status)
@@ -226,7 +263,6 @@ private fun LearningPreview(reports: List<SelfReportEntity>) {
         Text("${summary.sampleCount}/5 reports collected. No personal pattern claims yet.")
         return
     }
-
     Text("Based on ${summary.sampleCount} local reports; descriptive only, not a prediction.")
     Text("Average flow: ${formatScore(summary.averageFlow)} / 5")
     Text("Average presence: ${formatScore(summary.averagePresence)} / 5")
@@ -250,20 +286,13 @@ private fun ProbeResultView(result: ProbeResult) {
 
 private fun formatEpoch(epochMs: Long?): String {
     if (epochMs == null) return "none"
-    return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-        .withZone(ZoneId.systemDefault())
-        .format(Instant.ofEpochMilli(epochMs))
+    return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(epochMs))
 }
 
 @Composable
 private fun Score(label: String, value: Float, onValueChange: (Float) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text("$label: ${value.toInt()}")
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = 0f..5f,
-            steps = 4,
-        )
+        Slider(value = value, onValueChange = onValueChange, valueRange = 0f..5f, steps = 4)
     }
 }
