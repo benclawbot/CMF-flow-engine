@@ -53,8 +53,11 @@ class HealthContextCollector(private val context: Context) {
 
             val hrSamples = heartRate.flatMap { it.samples }
             val bpms = hrSamples.map { it.beatsPerMinute.toDouble() }
-            val origins = (heartRate + steps + sleep)
-                .map { it.metadata.dataOrigin.packageName }
+            val origins = buildSet {
+                heartRate.mapTo(this) { it.metadata.dataOrigin.packageName }
+                steps.mapTo(this) { it.metadata.dataOrigin.packageName }
+                sleep.mapTo(this) { it.metadata.dataOrigin.packageName }
+            }
                 .filter { it.isNotBlank() }
                 .toSortedSet()
                 .joinToString(",")
