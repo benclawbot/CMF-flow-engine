@@ -69,7 +69,7 @@ interface RecommendationEventDao {
 
 @Database(
     entities = [SelfReportEntity::class, ContextSnapshotEntity::class, TaskEntity::class, RecommendationEventEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class FlowDatabase : RoomDatabase() {
