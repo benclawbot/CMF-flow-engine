@@ -13,7 +13,7 @@ class FlowApplication : Application() {
             FlowDatabase::class.java,
             "cmf-flow.db",
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
     }
 
@@ -52,6 +52,27 @@ class FlowApplication : Application() {
                 db.execSQL("ALTER TABLE context_snapshots ADD COLUMN batteryPercent INTEGER")
                 db.execSQL("ALTER TABLE context_snapshots ADD COLUMN isCharging INTEGER")
                 db.execSQL("ALTER TABLE context_snapshots ADD COLUMN isPhoneInteractive INTEGER")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS tasks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        title TEXT NOT NULL,
+                        domain TEXT NOT NULL,
+                        valueScore INTEGER NOT NULL,
+                        urgencyScore INTEGER NOT NULL,
+                        difficultyScore INTEGER NOT NULL,
+                        estimatedMinutes INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        dueAtEpochMs INTEGER,
+                        createdAtEpochMs INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
             }
         }
     }
