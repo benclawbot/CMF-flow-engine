@@ -19,6 +19,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
+import com.benclawbot.cmfflow.analytics.summarize
 import com.benclawbot.cmfflow.data.SelfReportEntity
 import com.benclawbot.cmfflow.health.HealthConnectProbe
 import com.benclawbot.cmfflow.health.HealthContextCollector
@@ -44,9 +46,11 @@ class MainActivity : ComponentActivity() {
         val contextCollector = HealthContextCollector(this)
 
         setContent {
+            val recentReports by database.selfReportDao().observeRecent().collectAsState(initial = emptyList())
             MaterialTheme {
                 FlowHome(
                     probe = probe,
+                    recentReports = recentReports,
                     save = { report ->
                         val reportId = database.selfReportDao().insert(report)
                         val snapshot = contextCollector.collect(reportId, report.capturedAtEpochMs)
@@ -62,6 +66,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun FlowHome(
     probe: HealthConnectProbe,
+    recentReports: List<SelfReportEntity>,
     save: suspend (SelfReportEntity) -> Long,
 ) {
     val scope = rememberCoroutineScope()
@@ -156,6 +161,8 @@ private fun FlowHome(
             },
         ) { Text("Save report") }
 
+        LearningPreview(recentReports)
+
         Text("Health Connect probe", style = MaterialTheme.typography.titleLarge)
         Text("Reads the last 7 days and reports record origin plus time coverage. No health data is uploaded.")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -177,6 +184,24 @@ private fun FlowHome(
         results.forEach { result -> ProbeResultView(result) }
     }
 }
+
+@Composable
+private fun LearningPreview(reports: List<SelfReportEntity>) {
+    val summary = summarize(reports)
+    Text("Learning preview", style = MaterialTheme.typography.titleLarge)
+    if (summary.sampleCount < 5) {
+        Text("${summary.sampleCount}/5 reports collected. No personal pattern claims yet.")
+        return
+    }
+
+    Text("Based on ${summary.sampleCount} local reports; descriptive only, not a prediction.")
+    Text("Average flow: ${formatScore(summary.averageFlow)} / 5")
+    Text("Average presence: ${formatScore(summary.averagePresence)} / 5")
+    Text("Average fatigue: ${formatScore(summary.averageFatigue)} / 5")
+    summary.strongestDomain?.let { Text("Highest-flow domain with ≥3 samples: $it") }
+}
+
+private fun formatScore(value: Double?): String = value?.let { "%.1f".format(it) } ?: "n/a"
 
 @Composable
 private fun ProbeResultView(result: ProbeResult) {
