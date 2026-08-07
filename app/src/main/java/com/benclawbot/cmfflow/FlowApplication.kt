@@ -13,15 +13,14 @@ class FlowApplication : Application() {
             FlowDatabase::class.java,
             "cmf-flow.db",
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             .build()
     }
 
     private companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS context_snapshots (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         selfReportId INTEGER NOT NULL,
@@ -39,8 +38,7 @@ class FlowApplication : Application() {
                         collectionError TEXT,
                         FOREIGN KEY(selfReportId) REFERENCES self_reports(id) ON UPDATE NO ACTION ON DELETE CASCADE
                     )
-                    """.trimIndent(),
-                )
+                """.trimIndent())
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_context_snapshots_selfReportId ON context_snapshots(selfReportId)")
             }
         }
@@ -57,8 +55,7 @@ class FlowApplication : Application() {
 
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS tasks (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         title TEXT NOT NULL,
@@ -71,15 +68,13 @@ class FlowApplication : Application() {
                         dueAtEpochMs INTEGER,
                         createdAtEpochMs INTEGER NOT NULL
                     )
-                    """.trimIndent(),
-                )
+                """.trimIndent())
             }
         }
 
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS recommendation_events (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         taskId INTEGER NOT NULL,
@@ -91,8 +86,7 @@ class FlowApplication : Application() {
                         respondedAtEpochMs INTEGER,
                         outcomeSelfReportId INTEGER
                     )
-                    """.trimIndent(),
-                )
+                """.trimIndent())
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_recommendation_events_taskId ON recommendation_events(taskId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_recommendation_events_outcomeSelfReportId ON recommendation_events(outcomeSelfReportId)")
             }
@@ -101,6 +95,23 @@ class FlowApplication : Application() {
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE recommendation_events ADD COLUMN taskDomain TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS intervention_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        action TEXT NOT NULL,
+                        presentedAtEpochMs INTEGER NOT NULL,
+                        reasonsSnapshot TEXT NOT NULL,
+                        response TEXT,
+                        respondedAtEpochMs INTEGER,
+                        outcomeSelfReportId INTEGER
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_intervention_events_outcomeSelfReportId ON intervention_events(outcomeSelfReportId)")
             }
         }
     }
