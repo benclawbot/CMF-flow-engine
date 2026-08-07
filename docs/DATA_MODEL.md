@@ -79,6 +79,11 @@ Each frequent self-report is paired with one local context snapshot. Current imp
 - `battery_percent` nullable
 - `is_charging` nullable
 - `is_phone_interactive` nullable
+- `usage_access_granted`
+- `app_switch_count` nullable
+- `unlock_count` nullable
+- `screen_interactive_transitions` nullable
+- `notification_count` nullable
 - heart-rate record count
 - heart-rate sample count
 - heart-rate min/max/mean within the context window
@@ -87,17 +92,9 @@ Each frequent self-report is paired with one local context snapshot. Current imp
 - Health Connect data-origin package names
 - `collection_error` nullable
 
-Planned context additions include:
+Attention-fragmentation collection is deliberately aggregate-only. Usage Access is used to count foreground-app transitions plus screen/keyguard transitions. Notification Listener access stores only notification timestamps for count aggregation; notification text, sender, title, app content, and payload are not persisted. Missing special-access permissions result in explicit null/permission state.
 
-- recent screen time
-- app switch count
-- notification count
-- unlock count
-- interruption count and relevance
-- environment features
-- social context
-
-Store derived features with version/provenance so model changes remain auditable. Missing permissions or unavailable sources should produce explicit missing/error state, never silently fabricated values.
+Planned context additions include interruption relevance, environment features, and social context. Store derived features with version/provenance so model changes remain auditable. Missing permissions or unavailable sources should produce explicit missing/error state, never silently fabricated values.
 
 ## `flow_episode`
 
