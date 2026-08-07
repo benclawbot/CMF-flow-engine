@@ -1,6 +1,8 @@
 package com.benclawbot.cmfflow.health
 
 import android.content.Context
+import android.os.BatteryManager
+import android.os.PowerManager
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
@@ -9,6 +11,7 @@ import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.benclawbot.cmfflow.data.ContextSnapshotEntity
 import java.time.Instant
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 class HealthContextCollector(private val context: Context) {
@@ -17,9 +20,26 @@ class HealthContextCollector(private val context: Context) {
         val windowStart = center.minus(30, ChronoUnit.MINUTES)
         val windowEnd = center.plus(5, ChronoUnit.MINUTES)
         val sleepStart = center.minus(24, ChronoUnit.HOURS)
+        val local = center.atZone(ZoneId.systemDefault())
+        val batteryManager = context.getSystemService(BatteryManager::class.java)
+        val powerManager = context.getSystemService(PowerManager::class.java)
+        val batteryPercent = batteryManager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
+        val charging = batteryManager?.isCharging
+        val interactive = powerManager?.isInteractive
 
         if (HealthConnectClient.getSdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) {
-            return emptySnapshot(selfReportId, capturedAtEpochMs, windowStart, windowEnd, "Health Connect unavailable")
+            return emptySnapshot(
+                selfReportId,
+                capturedAtEpochMs,
+                windowStart,
+                windowEnd,
+                local.hour,
+                local.dayOfWeek.value,
+                batteryPercent,
+                charging,
+                interactive,
+                "Health Connect unavailable",
+            )
         }
 
         return runCatching {
@@ -44,6 +64,11 @@ class HealthContextCollector(private val context: Context) {
                 capturedAtEpochMs = capturedAtEpochMs,
                 windowStartEpochMs = windowStart.toEpochMilli(),
                 windowEndEpochMs = windowEnd.toEpochMilli(),
+                localHour = local.hour,
+                localDayOfWeek = local.dayOfWeek.value,
+                batteryPercent = batteryPercent,
+                isCharging = charging,
+                isPhoneInteractive = interactive,
                 heartRateRecordCount = heartRate.size,
                 heartRateSampleCount = hrSamples.size,
                 heartRateMinBpm = bpms.minOrNull(),
@@ -62,6 +87,11 @@ class HealthContextCollector(private val context: Context) {
                 capturedAtEpochMs,
                 windowStart,
                 windowEnd,
+                local.hour,
+                local.dayOfWeek.value,
+                batteryPercent,
+                charging,
+                interactive,
                 error.javaClass.simpleName + ": " + (error.message ?: "unknown"),
             )
         }
@@ -72,12 +102,22 @@ class HealthContextCollector(private val context: Context) {
         capturedAtEpochMs: Long,
         windowStart: Instant,
         windowEnd: Instant,
+        localHour: Int,
+        localDayOfWeek: Int,
+        batteryPercent: Int?,
+        isCharging: Boolean?,
+        isPhoneInteractive: Boolean?,
         error: String,
     ) = ContextSnapshotEntity(
         selfReportId = selfReportId,
         capturedAtEpochMs = capturedAtEpochMs,
         windowStartEpochMs = windowStart.toEpochMilli(),
         windowEndEpochMs = windowEnd.toEpochMilli(),
+        localHour = localHour,
+        localDayOfWeek = localDayOfWeek,
+        batteryPercent = batteryPercent,
+        isCharging = isCharging,
+        isPhoneInteractive = isPhoneInteractive,
         heartRateRecordCount = 0,
         heartRateSampleCount = 0,
         heartRateMinBpm = null,
