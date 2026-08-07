@@ -38,11 +38,13 @@ import com.benclawbot.cmfflow.data.ContextSnapshotEntity
 import com.benclawbot.cmfflow.data.InterventionEventEntity
 import com.benclawbot.cmfflow.data.RecommendationEventEntity
 import com.benclawbot.cmfflow.data.SelfReportEntity
+import com.benclawbot.cmfflow.data.SessionEntity
 import com.benclawbot.cmfflow.data.TaskEntity
 import com.benclawbot.cmfflow.health.HealthConnectProbe
 import com.benclawbot.cmfflow.health.HealthContextCollector
 import com.benclawbot.cmfflow.health.ProbeResult
 import com.benclawbot.cmfflow.interventions.recommendIntervention
+import com.benclawbot.cmfflow.interventions.sessionSignals
 import com.benclawbot.cmfflow.ranking.rankTasks
 import com.benclawbot.cmfflow.reminders.CheckInReminderScheduler
 import kotlinx.coroutines.launch
@@ -62,6 +64,7 @@ class MainActivity : ComponentActivity() {
             val recentContexts by database.contextSnapshotDao().observeRecent().collectAsState(initial = emptyList())
             val recentRecommendations by database.recommendationEventDao().observeRecent().collectAsState(initial = emptyList())
             val openTasks by database.taskDao().observeOpen().collectAsState(initial = emptyList())
+            val activeSession by database.sessionDao().observeActive().collectAsState(initial = null)
             MaterialTheme {
                 FlowHome(
                     probe = probe,
@@ -69,8 +72,12 @@ class MainActivity : ComponentActivity() {
                     recentContexts = recentContexts,
                     recentRecommendations = recentRecommendations,
                     openTasks = openTasks,
+                    activeSession = activeSession,
                     addTask = { database.taskDao().insert(it) },
                     markTaskDone = { database.taskDao().markDone(it) },
+                    startSession = { database.sessionDao().insert(it) },
+                    recordStruggle = { database.sessionDao().recordStruggle(it) },
+                    endSession = { sessionId -> database.sessionDao().end(sessionId, System.currentTimeMillis()) },
                     recordRecommendation = { database.recommendationEventDao().insert(it) },
                     recordRecommendationResponse = { eventId, response ->
                         database.recommendationEventDao().recordResponse(eventId, response, System.currentTimeMillis())
@@ -100,8 +107,12 @@ private fun FlowHome(
     recentContexts: List<ContextSnapshotEntity>,
     recentRecommendations: List<RecommendationEventEntity>,
     openTasks: List<TaskEntity>,
+    activeSession: SessionEntity?,
     addTask: suspend (TaskEntity) -> Long,
     markTaskDone: suspend (Long) -> Unit,
+    startSession: suspend (SessionEntity) -> Long,
+    recordStruggle: suspend (Long) -> Unit,
+    endSession: suspend (Long) -> Unit,
     recordRecommendation: suspend (RecommendationEventEntity) -> Long,
     recordRecommendationResponse: suspend (Long, String) -> Unit,
     recordIntervention: suspend (InterventionEventEntity) -> Long,
@@ -206,8 +217,13 @@ private fun FlowHome(
 
         LearningPreview(recentReports)
 
-        val intervention = recommendIntervention(recentReports.firstOrNull())
-        LaunchedEffect(intervention.action, intervention.reasons) {
+        val sessionState = sessionSignals(activeSession)
+        val intervention = recommendIntervention(
+            latestReport = recentReports.firstOrNull(),
+            minutesOnCurrentTask = sessionState.minutesOnCurrentTask,
+            repeatedStruggle = sessionState.repeatedStruggle,
+        )
+        LaunchedEffect(intervention.action, intervention.reasons, activeSession?.id, activeSession?.struggleCount) {
             activeInterventionEventId = recordIntervention(
                 InterventionEventEntity(
                     action = intervention.action.name,
@@ -219,6 +235,23 @@ private fun FlowHome(
         Text("Suggested intervention", style = MaterialTheme.typography.titleLarge)
         Text(intervention.action.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() })
         Text(intervention.reasons.joinToString(" · "))
+        activeSession?.let { session ->
+            Text("Active session: ${session.taskTitle ?: "unassigned"} · ${sessionState.minutesOnCurrentTask ?: 0} min · struggles ${session.struggleCount}")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    scope.launch {
+                        recordStruggle(session.id)
+                        status = "Struggle marked; repeated struggle can trigger AI assistance"
+                    }
+                }) { Text("I'm stuck") }
+                Button(onClick = {
+                    scope.launch {
+                        endSession(session.id)
+                        status = "Session ended"
+                    }
+                }) { Text("End session") }
+            }
+        }
         if (interventionResponse == null) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
@@ -296,9 +329,21 @@ private fun FlowHome(
                         scope.launch {
                             activeRecommendationEventId?.let { recordRecommendationResponse(it, "accepted") }
                             recommendationResponse = "accepted"
-                            status = "Recommendation accepted; next check-in will be linked as outcome"
+                            if (activeSession == null) {
+                                startSession(
+                                    SessionEntity(
+                                        taskId = recommendation.task.id,
+                                        taskTitle = recommendation.task.title,
+                                        taskDomain = recommendation.task.domain,
+                                        startedAtEpochMs = System.currentTimeMillis(),
+                                    ),
+                                )
+                                status = "Recommendation accepted; focus session started"
+                            } else {
+                                status = "Recommendation accepted; active session already running"
+                            }
                         }
-                    }) { Text("Accept") }
+                    }) { Text("Accept + start") }
                     Button(onClick = {
                         scope.launch {
                             activeRecommendationEventId?.let { recordRecommendationResponse(it, "rejected") }
