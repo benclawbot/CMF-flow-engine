@@ -49,27 +49,31 @@ interface RecommendationEventDao {
     @Query("UPDATE recommendation_events SET response = :response, respondedAtEpochMs = :respondedAtEpochMs WHERE id = :eventId")
     suspend fun recordResponse(eventId: Long, response: String, respondedAtEpochMs: Long)
 
-    @Query(
-        """
-        UPDATE recommendation_events
-        SET outcomeSelfReportId = :selfReportId
-        WHERE id = (
-            SELECT id FROM recommendation_events
-            WHERE response IS NOT NULL AND outcomeSelfReportId IS NULL
-            ORDER BY respondedAtEpochMs DESC
-            LIMIT 1
-        )
-        """,
-    )
+    @Query("UPDATE recommendation_events SET outcomeSelfReportId = :selfReportId WHERE id = (SELECT id FROM recommendation_events WHERE response IS NOT NULL AND outcomeSelfReportId IS NULL ORDER BY respondedAtEpochMs DESC LIMIT 1)")
     suspend fun attachOutcomeToLatestResponded(selfReportId: Long)
 
     @Query("SELECT * FROM recommendation_events ORDER BY presentedAtEpochMs DESC LIMIT 100")
     fun observeRecent(): Flow<List<RecommendationEventEntity>>
 }
 
+@Dao
+interface InterventionEventDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(event: InterventionEventEntity): Long
+
+    @Query("UPDATE intervention_events SET response = :response, respondedAtEpochMs = :respondedAtEpochMs WHERE id = :eventId")
+    suspend fun recordResponse(eventId: Long, response: String, respondedAtEpochMs: Long)
+
+    @Query("UPDATE intervention_events SET outcomeSelfReportId = :selfReportId WHERE id = (SELECT id FROM intervention_events WHERE response IS NOT NULL AND outcomeSelfReportId IS NULL ORDER BY respondedAtEpochMs DESC LIMIT 1)")
+    suspend fun attachOutcomeToLatestResponded(selfReportId: Long)
+
+    @Query("SELECT * FROM intervention_events ORDER BY presentedAtEpochMs DESC LIMIT 100")
+    fun observeRecent(): Flow<List<InterventionEventEntity>>
+}
+
 @Database(
-    entities = [SelfReportEntity::class, ContextSnapshotEntity::class, TaskEntity::class, RecommendationEventEntity::class],
-    version = 6,
+    entities = [SelfReportEntity::class, ContextSnapshotEntity::class, TaskEntity::class, RecommendationEventEntity::class, InterventionEventEntity::class],
+    version = 7,
     exportSchema = true,
 )
 abstract class FlowDatabase : RoomDatabase() {
@@ -77,4 +81,5 @@ abstract class FlowDatabase : RoomDatabase() {
     abstract fun contextSnapshotDao(): ContextSnapshotDao
     abstract fun taskDao(): TaskDao
     abstract fun recommendationEventDao(): RecommendationEventDao
+    abstract fun interventionEventDao(): InterventionEventDao
 }
