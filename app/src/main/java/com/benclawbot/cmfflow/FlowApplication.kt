@@ -13,7 +13,7 @@ class FlowApplication : Application() {
             FlowDatabase::class.java,
             "cmf-flow.db",
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .build()
     }
 
@@ -95,6 +95,12 @@ class FlowApplication : Application() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_recommendation_events_taskId ON recommendation_events(taskId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_recommendation_events_outcomeSelfReportId ON recommendation_events(outcomeSelfReportId)")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE recommendation_events ADD COLUMN taskDomain TEXT NOT NULL DEFAULT ''")
             }
         }
     }
