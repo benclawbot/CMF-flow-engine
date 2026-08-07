@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.benclawbot.cmfflow.analytics.summarize
+import com.benclawbot.cmfflow.data.ContextSnapshotEntity
 import com.benclawbot.cmfflow.data.SelfReportEntity
 import com.benclawbot.cmfflow.data.TaskEntity
 import com.benclawbot.cmfflow.health.HealthConnectProbe
@@ -54,11 +55,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val recentReports by database.selfReportDao().observeRecent().collectAsState(initial = emptyList())
+            val recentContexts by database.contextSnapshotDao().observeRecent().collectAsState(initial = emptyList())
             val openTasks by database.taskDao().observeOpen().collectAsState(initial = emptyList())
             MaterialTheme {
                 FlowHome(
                     probe = probe,
                     recentReports = recentReports,
+                    recentContexts = recentContexts,
                     openTasks = openTasks,
                     addTask = { database.taskDao().insert(it) },
                     markTaskDone = { database.taskDao().markDone(it) },
@@ -78,6 +81,7 @@ class MainActivity : ComponentActivity() {
 private fun FlowHome(
     probe: HealthConnectProbe,
     recentReports: List<SelfReportEntity>,
+    recentContexts: List<ContextSnapshotEntity>,
     openTasks: List<TaskEntity>,
     addTask: suspend (TaskEntity) -> Long,
     markTaskDone: suspend (Long) -> Unit,
@@ -181,7 +185,7 @@ private fun FlowHome(
         LearningPreview(recentReports)
 
         Text("Tasks", style = MaterialTheme.typography.titleLarge)
-        Text("Ranking is local and transparent. Personal history is used only after minimum evidence thresholds are met.")
+        Text("Ranking is local and transparent. Personal history and paired context are used only after minimum evidence thresholds are met.")
         OutlinedTextField(value = taskTitle, onValueChange = { taskTitle = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Task title") }, singleLine = true)
         OutlinedTextField(value = taskDomain, onValueChange = { taskDomain = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Task domain") }, singleLine = true)
         Score("Task value", taskValue) { taskValue = it }
@@ -208,7 +212,13 @@ private fun FlowHome(
             },
         ) { Text("Add task") }
 
-        val ranked = rankTasks(openTasks, recentReports.firstOrNull(), recentReports)
+        val ranked = rankTasks(
+            tasks = openTasks,
+            latestReport = recentReports.firstOrNull(),
+            historicalReports = recentReports,
+            currentContext = recentContexts.firstOrNull(),
+            historicalContexts = recentContexts,
+        )
         ranked.firstOrNull()?.let { recommendation ->
             Text("Suggested now", style = MaterialTheme.typography.titleMedium)
             Text(recommendation.task.title)
