@@ -12,6 +12,7 @@ data class RecommendationEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val taskId: Long,
     val taskTitle: String,
+    val taskDomain: String,
     val presentedAtEpochMs: Long = System.currentTimeMillis(),
     val score: Double,
     val reasonsSnapshot: String,
