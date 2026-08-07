@@ -9,12 +9,16 @@ import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.benclawbot.cmfflow.attention.AttentionContext
+import com.benclawbot.cmfflow.attention.AttentionContextCollector
 import com.benclawbot.cmfflow.data.ContextSnapshotEntity
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 class HealthContextCollector(private val context: Context) {
+    private val attentionCollector = AttentionContextCollector(context)
+
     suspend fun collect(selfReportId: Long, capturedAtEpochMs: Long): ContextSnapshotEntity {
         val center = Instant.ofEpochMilli(capturedAtEpochMs)
         val windowStart = center.minus(30, ChronoUnit.MINUTES)
@@ -26,6 +30,7 @@ class HealthContextCollector(private val context: Context) {
         val batteryPercent = batteryManager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
         val charging = batteryManager?.isCharging
         val interactive = powerManager?.isInteractive
+        val attention = attentionCollector.collect(windowStart.toEpochMilli(), windowEnd.toEpochMilli())
 
         if (HealthConnectClient.getSdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) {
             return emptySnapshot(
@@ -38,6 +43,7 @@ class HealthContextCollector(private val context: Context) {
                 batteryPercent,
                 charging,
                 interactive,
+                attention,
                 "Health Connect unavailable",
             )
         }
@@ -72,6 +78,11 @@ class HealthContextCollector(private val context: Context) {
                 batteryPercent = batteryPercent,
                 isCharging = charging,
                 isPhoneInteractive = interactive,
+                usageAccessGranted = attention.usageAccessGranted,
+                appSwitchCount = attention.appSwitchCount,
+                unlockCount = attention.unlockCount,
+                screenInteractiveTransitions = attention.screenInteractiveTransitions,
+                notificationCount = attention.notificationCount,
                 heartRateRecordCount = heartRate.size,
                 heartRateSampleCount = hrSamples.size,
                 heartRateMinBpm = bpms.minOrNull(),
@@ -95,6 +106,7 @@ class HealthContextCollector(private val context: Context) {
                 batteryPercent,
                 charging,
                 interactive,
+                attention,
                 error.javaClass.simpleName + ": " + (error.message ?: "unknown"),
             )
         }
@@ -110,6 +122,7 @@ class HealthContextCollector(private val context: Context) {
         batteryPercent: Int?,
         isCharging: Boolean?,
         isPhoneInteractive: Boolean?,
+        attention: AttentionContext,
         error: String,
     ) = ContextSnapshotEntity(
         selfReportId = selfReportId,
@@ -121,6 +134,11 @@ class HealthContextCollector(private val context: Context) {
         batteryPercent = batteryPercent,
         isCharging = isCharging,
         isPhoneInteractive = isPhoneInteractive,
+        usageAccessGranted = attention.usageAccessGranted,
+        appSwitchCount = attention.appSwitchCount,
+        unlockCount = attention.unlockCount,
+        screenInteractiveTransitions = attention.screenInteractiveTransitions,
+        notificationCount = attention.notificationCount,
         heartRateRecordCount = 0,
         heartRateSampleCount = 0,
         heartRateMinBpm = null,
