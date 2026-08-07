@@ -35,12 +35,14 @@ import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.benclawbot.cmfflow.analytics.summarize
 import com.benclawbot.cmfflow.data.ContextSnapshotEntity
+import com.benclawbot.cmfflow.data.InterventionEventEntity
 import com.benclawbot.cmfflow.data.RecommendationEventEntity
 import com.benclawbot.cmfflow.data.SelfReportEntity
 import com.benclawbot.cmfflow.data.TaskEntity
 import com.benclawbot.cmfflow.health.HealthConnectProbe
 import com.benclawbot.cmfflow.health.HealthContextCollector
 import com.benclawbot.cmfflow.health.ProbeResult
+import com.benclawbot.cmfflow.interventions.recommendIntervention
 import com.benclawbot.cmfflow.ranking.rankTasks
 import com.benclawbot.cmfflow.reminders.CheckInReminderScheduler
 import kotlinx.coroutines.launch
@@ -73,11 +75,16 @@ class MainActivity : ComponentActivity() {
                     recordRecommendationResponse = { eventId, response ->
                         database.recommendationEventDao().recordResponse(eventId, response, System.currentTimeMillis())
                     },
+                    recordIntervention = { database.interventionEventDao().insert(it) },
+                    recordInterventionResponse = { eventId, response ->
+                        database.interventionEventDao().recordResponse(eventId, response, System.currentTimeMillis())
+                    },
                     save = { report ->
                         val reportId = database.selfReportDao().insert(report)
                         val snapshot = contextCollector.collect(reportId, report.capturedAtEpochMs)
                         database.contextSnapshotDao().insert(snapshot)
                         database.recommendationEventDao().attachOutcomeToLatestResponded(reportId)
+                        database.interventionEventDao().attachOutcomeToLatestResponded(reportId)
                         reportId
                     },
                 )
@@ -97,6 +104,8 @@ private fun FlowHome(
     markTaskDone: suspend (Long) -> Unit,
     recordRecommendation: suspend (RecommendationEventEntity) -> Long,
     recordRecommendationResponse: suspend (Long, String) -> Unit,
+    recordIntervention: suspend (InterventionEventEntity) -> Long,
+    recordInterventionResponse: suspend (Long, String) -> Unit,
     save: suspend (SelfReportEntity) -> Long,
 ) {
     val context = LocalContext.current
@@ -121,6 +130,8 @@ private fun FlowHome(
     var taskMinutes by remember { mutableStateOf("30") }
     var activeRecommendationEventId by remember { mutableStateOf<Long?>(null) }
     var recommendationResponse by remember { mutableStateOf<String?>(null) }
+    var activeInterventionEventId by remember { mutableStateOf<Long?>(null) }
+    var interventionResponse by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf("Ready") }
     var results by remember { mutableStateOf<List<ProbeResult>>(emptyList()) }
 
@@ -141,10 +152,7 @@ private fun FlowHome(
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("CMF Flow Engine", style = MaterialTheme.typography.headlineMedium)
@@ -192,11 +200,45 @@ private fun FlowHome(
                         notes = null,
                     ),
                 )
-                status = "Report + context snapshot saved locally; eligible recommendation outcome linked"
+                status = "Report + context saved; eligible recommendation/intervention outcomes linked"
             }
         }) { Text("Save report") }
 
         LearningPreview(recentReports)
+
+        val intervention = recommendIntervention(recentReports.firstOrNull())
+        LaunchedEffect(intervention.action, intervention.reasons) {
+            activeInterventionEventId = recordIntervention(
+                InterventionEventEntity(
+                    action = intervention.action.name,
+                    reasonsSnapshot = intervention.reasons.joinToString("|"),
+                ),
+            )
+            interventionResponse = null
+        }
+        Text("Suggested intervention", style = MaterialTheme.typography.titleLarge)
+        Text(intervention.action.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() })
+        Text(intervention.reasons.joinToString(" · "))
+        if (interventionResponse == null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    scope.launch {
+                        activeInterventionEventId?.let { recordInterventionResponse(it, "accepted") }
+                        interventionResponse = "accepted"
+                        status = "Intervention accepted; next check-in will be linked as outcome"
+                    }
+                }) { Text("Accept") }
+                Button(onClick = {
+                    scope.launch {
+                        activeInterventionEventId?.let { recordInterventionResponse(it, "dismissed") }
+                        interventionResponse = "dismissed"
+                        status = "Intervention dismissed; next check-in will still record the outcome"
+                    }
+                }) { Text("Dismiss") }
+            }
+        } else {
+            Text("Intervention response: $interventionResponse")
+        }
 
         Text("Tasks", style = MaterialTheme.typography.titleLarge)
         Text("Ranking is local and transparent. Personal history, paired context, and recommendation outcomes are used only after minimum evidence thresholds are met.")
@@ -206,25 +248,22 @@ private fun FlowHome(
         Score("Task urgency", taskUrgency) { taskUrgency = it }
         Score("Task difficulty", taskDifficulty) { taskDifficulty = it }
         OutlinedTextField(value = taskMinutes, onValueChange = { taskMinutes = it.filter(Char::isDigit) }, modifier = Modifier.fillMaxWidth(), label = { Text("Estimated minutes") }, singleLine = true)
-        Button(
-            enabled = taskTitle.isNotBlank(),
-            onClick = {
-                scope.launch {
-                    addTask(
-                        TaskEntity(
-                            title = taskTitle.trim(),
-                            domain = taskDomain.trim().ifBlank { "other" },
-                            valueScore = taskValue.toInt(),
-                            urgencyScore = taskUrgency.toInt(),
-                            difficultyScore = taskDifficulty.toInt(),
-                            estimatedMinutes = taskMinutes.toIntOrNull()?.coerceAtLeast(1) ?: 30,
-                        ),
-                    )
-                    taskTitle = ""
-                    status = "Task saved locally"
-                }
-            },
-        ) { Text("Add task") }
+        Button(enabled = taskTitle.isNotBlank(), onClick = {
+            scope.launch {
+                addTask(
+                    TaskEntity(
+                        title = taskTitle.trim(),
+                        domain = taskDomain.trim().ifBlank { "other" },
+                        valueScore = taskValue.toInt(),
+                        urgencyScore = taskUrgency.toInt(),
+                        difficultyScore = taskDifficulty.toInt(),
+                        estimatedMinutes = taskMinutes.toIntOrNull()?.coerceAtLeast(1) ?: 30,
+                    ),
+                )
+                taskTitle = ""
+                status = "Task saved locally"
+            }
+        }) { Text("Add task") }
 
         val ranked = rankTasks(
             tasks = openTasks,
@@ -257,21 +296,21 @@ private fun FlowHome(
                         scope.launch {
                             activeRecommendationEventId?.let { recordRecommendationResponse(it, "accepted") }
                             recommendationResponse = "accepted"
-                            status = "Recommendation accepted; your next check-in will be linked as its outcome"
+                            status = "Recommendation accepted; next check-in will be linked as outcome"
                         }
                     }) { Text("Accept") }
                     Button(onClick = {
                         scope.launch {
                             activeRecommendationEventId?.let { recordRecommendationResponse(it, "rejected") }
                             recommendationResponse = "rejected"
-                            status = "Recommendation rejected; your next check-in will be linked as its outcome"
+                            status = "Recommendation rejected; next check-in will be linked as outcome"
                         }
                     }) { Text("Reject") }
                     Button(onClick = {
                         scope.launch {
                             activeRecommendationEventId?.let { recordRecommendationResponse(it, "ignored") }
                             recommendationResponse = "ignored"
-                            status = "Recommendation ignored; your next check-in will be linked as its outcome"
+                            status = "Recommendation ignored; next check-in will be linked as outcome"
                         }
                     }) { Text("Ignore") }
                 }
