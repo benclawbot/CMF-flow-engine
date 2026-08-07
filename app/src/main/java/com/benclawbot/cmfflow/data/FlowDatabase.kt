@@ -24,6 +24,9 @@ interface ContextSnapshotDao {
 
     @Query("SELECT * FROM context_snapshots WHERE selfReportId = :selfReportId LIMIT 1")
     suspend fun forReport(selfReportId: Long): ContextSnapshotEntity?
+
+    @Query("SELECT * FROM context_snapshots ORDER BY capturedAtEpochMs DESC LIMIT 100")
+    fun observeRecent(): Flow<List<ContextSnapshotEntity>>
 }
 
 @Dao
