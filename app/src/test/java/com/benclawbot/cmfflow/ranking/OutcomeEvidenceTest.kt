@@ -53,5 +53,11 @@ class OutcomeEvidenceTest {
         intrinsicReward = flow,
         presence = presence,
         fatigue = fatigue,
+        activityLabel = null,
+        domain = null,
+        taskDifficulty = null,
+        goalClarity = null,
+        perceivedControl = null,
+        notes = null,
     )
 }
