@@ -58,12 +58,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val recentReports by database.selfReportDao().observeRecent().collectAsState(initial = emptyList())
             val recentContexts by database.contextSnapshotDao().observeRecent().collectAsState(initial = emptyList())
+            val recentRecommendations by database.recommendationEventDao().observeRecent().collectAsState(initial = emptyList())
             val openTasks by database.taskDao().observeOpen().collectAsState(initial = emptyList())
             MaterialTheme {
                 FlowHome(
                     probe = probe,
                     recentReports = recentReports,
                     recentContexts = recentContexts,
+                    recentRecommendations = recentRecommendations,
                     openTasks = openTasks,
                     addTask = { database.taskDao().insert(it) },
                     markTaskDone = { database.taskDao().markDone(it) },
@@ -89,6 +91,7 @@ private fun FlowHome(
     probe: HealthConnectProbe,
     recentReports: List<SelfReportEntity>,
     recentContexts: List<ContextSnapshotEntity>,
+    recentRecommendations: List<RecommendationEventEntity>,
     openTasks: List<TaskEntity>,
     addTask: suspend (TaskEntity) -> Long,
     markTaskDone: suspend (Long) -> Unit,
@@ -196,7 +199,7 @@ private fun FlowHome(
         LearningPreview(recentReports)
 
         Text("Tasks", style = MaterialTheme.typography.titleLarge)
-        Text("Ranking is local and transparent. Personal history and paired context are used only after minimum evidence thresholds are met.")
+        Text("Ranking is local and transparent. Personal history, paired context, and recommendation outcomes are used only after minimum evidence thresholds are met.")
         OutlinedTextField(value = taskTitle, onValueChange = { taskTitle = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Task title") }, singleLine = true)
         OutlinedTextField(value = taskDomain, onValueChange = { taskDomain = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Task domain") }, singleLine = true)
         Score("Task value", taskValue) { taskValue = it }
@@ -229,6 +232,7 @@ private fun FlowHome(
             historicalReports = recentReports,
             currentContext = recentContexts.firstOrNull(),
             historicalContexts = recentContexts,
+            recommendationEvents = recentRecommendations,
         )
         ranked.firstOrNull()?.let { recommendation ->
             LaunchedEffect(recommendation.task.id, recommendation.score) {
@@ -236,6 +240,7 @@ private fun FlowHome(
                     RecommendationEventEntity(
                         taskId = recommendation.task.id,
                         taskTitle = recommendation.task.title,
+                        taskDomain = recommendation.task.domain,
                         score = recommendation.score,
                         reasonsSnapshot = recommendation.reasons.joinToString("|"),
                     ),
