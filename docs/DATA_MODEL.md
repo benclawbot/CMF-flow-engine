@@ -19,10 +19,14 @@ The model treats self-report as the primary label for subjective flow. Wearable 
 - `mood_valence` nullable integer -2..2
 - `task_id` nullable
 - `activity_label` nullable
+- `domain` nullable
+- `task_difficulty_score` nullable integer 0..5
+- `goal_clarity_score` nullable integer 0..5
+- `perceived_control_score` nullable integer 0..5
 - `session_quality` nullable
 - `notes` nullable
 
-The three core dimensions (absorption, effortless control, intrinsic reward) should be prioritized for frequent sampling. Longer probes can occasionally collect the broader dimensions to avoid excessive interruption.
+The three core dimensions (absorption, effortless control, intrinsic reward) should be prioritized for frequent sampling. Longer probes can occasionally collect the broader dimensions to avoid excessive interruption. Antecedent fields remain optional so they do not become part of the label by construction.
 
 ## `task`
 
@@ -63,23 +67,37 @@ Consumer wearable stress/readiness values must be stored as vendor-derived obser
 
 ## `context_snapshot`
 
-- `id`
-- `captured_at`
-- `time_of_day_features`
-- `recent_screen_time`
-- `app_switch_count`
-- `notification_count`
-- `unlock_count`
-- `interruption_count`
-- `interruption_relevance` nullable
-- `recent_activity_features`
-- `sleep_features`
-- `heart_rate_features`
-- `other_health_features`
-- `environment_features` nullable
-- `social_context` nullable
+Each frequent self-report is paired with one local context snapshot. Current implementation records:
 
-Store derived features with version/provenance so model changes remain auditable.
+- `id`
+- `self_report_id`
+- `captured_at`
+- `window_start`
+- `window_end`
+- `local_hour`
+- `local_day_of_week`
+- `battery_percent` nullable
+- `is_charging` nullable
+- `is_phone_interactive` nullable
+- heart-rate record count
+- heart-rate sample count
+- heart-rate min/max/mean within the context window
+- step count within the context window
+- sleep minutes during the previous 24 hours
+- Health Connect data-origin package names
+- `collection_error` nullable
+
+Planned context additions include:
+
+- recent screen time
+- app switch count
+- notification count
+- unlock count
+- interruption count and relevance
+- environment features
+- social context
+
+Store derived features with version/provenance so model changes remain auditable. Missing permissions or unavailable sources should produce explicit missing/error state, never silently fabricated values.
 
 ## `flow_episode`
 
