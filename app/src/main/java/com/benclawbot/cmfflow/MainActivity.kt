@@ -181,7 +181,7 @@ private fun FlowHome(
         LearningPreview(recentReports)
 
         Text("Tasks", style = MaterialTheme.typography.titleLarge)
-        Text("Ranking is local and rule-based for now; reasons are shown explicitly.")
+        Text("Ranking is local and transparent. Personal history is used only after minimum evidence thresholds are met.")
         OutlinedTextField(value = taskTitle, onValueChange = { taskTitle = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Task title") }, singleLine = true)
         OutlinedTextField(value = taskDomain, onValueChange = { taskDomain = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Task domain") }, singleLine = true)
         Score("Task value", taskValue) { taskValue = it }
@@ -208,7 +208,7 @@ private fun FlowHome(
             },
         ) { Text("Add task") }
 
-        val ranked = rankTasks(openTasks, recentReports.firstOrNull())
+        val ranked = rankTasks(openTasks, recentReports.firstOrNull(), recentReports)
         ranked.firstOrNull()?.let { recommendation ->
             Text("Suggested now", style = MaterialTheme.typography.titleMedium)
             Text(recommendation.task.title)
