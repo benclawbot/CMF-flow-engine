@@ -13,7 +13,7 @@ class FlowApplication : Application() {
             FlowDatabase::class.java,
             "cmf-flow.db",
         )
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
     }
 
@@ -42,6 +42,16 @@ class FlowApplication : Application() {
                     """.trimIndent(),
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_context_snapshots_selfReportId ON context_snapshots(selfReportId)")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE context_snapshots ADD COLUMN localHour INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE context_snapshots ADD COLUMN localDayOfWeek INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE context_snapshots ADD COLUMN batteryPercent INTEGER")
+                db.execSQL("ALTER TABLE context_snapshots ADD COLUMN isCharging INTEGER")
+                db.execSQL("ALTER TABLE context_snapshots ADD COLUMN isPhoneInteractive INTEGER")
             }
         }
     }
