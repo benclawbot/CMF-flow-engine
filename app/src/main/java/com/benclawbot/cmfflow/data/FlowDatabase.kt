@@ -26,12 +26,25 @@ interface ContextSnapshotDao {
     suspend fun forReport(selfReportId: Long): ContextSnapshotEntity?
 }
 
+@Dao
+interface TaskDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(task: TaskEntity): Long
+
+    @Query("SELECT * FROM tasks WHERE status = 'open' ORDER BY createdAtEpochMs DESC")
+    fun observeOpen(): Flow<List<TaskEntity>>
+
+    @Query("UPDATE tasks SET status = 'done' WHERE id = :taskId")
+    suspend fun markDone(taskId: Long)
+}
+
 @Database(
-    entities = [SelfReportEntity::class, ContextSnapshotEntity::class],
-    version = 3,
+    entities = [SelfReportEntity::class, ContextSnapshotEntity::class, TaskEntity::class],
+    version = 4,
     exportSchema = true,
 )
 abstract class FlowDatabase : RoomDatabase() {
     abstract fun selfReportDao(): SelfReportDao
     abstract fun contextSnapshotDao(): ContextSnapshotDao
+    abstract fun taskDao(): TaskDao
 }
