@@ -13,6 +13,7 @@ import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import kotlin.reflect.KClass
 
 class HealthConnectProbe(private val context: Context) {
     val permissions: Set<String> = setOf(
@@ -34,7 +35,7 @@ class HealthConnectProbe(private val context: Context) {
 
         return listOf(
             runCatching {
-                val records = client.readRecords(ReadRecordsRequest(HeartRateRecord::class, range)).records
+                val records = readAll(client, HeartRateRecord::class, range)
                 result(
                     name = "heart_rate",
                     records = records,
@@ -43,22 +44,43 @@ class HealthConnectProbe(private val context: Context) {
                 )
             }.getOrElse { errorResult("heart_rate", it) },
             runCatching {
-                val records = client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range)).records
+                val records = readAll(client, SleepSessionRecord::class, range)
                 result("sleep", records, records.flatMap { listOf(it.startTime, it.endTime) })
             }.getOrElse { errorResult("sleep", it) },
             runCatching {
-                val records = client.readRecords(ReadRecordsRequest(StepsRecord::class, range)).records
+                val records = readAll(client, StepsRecord::class, range)
                 result("steps", records, records.flatMap { listOf(it.startTime, it.endTime) })
             }.getOrElse { errorResult("steps", it) },
             runCatching {
-                val records = client.readRecords(ReadRecordsRequest(OxygenSaturationRecord::class, range)).records
+                val records = readAll(client, OxygenSaturationRecord::class, range)
                 result("oxygen_saturation", records, records.map { it.time })
             }.getOrElse { errorResult("oxygen_saturation", it) },
             runCatching {
-                val records = client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, range)).records
+                val records = readAll(client, ExerciseSessionRecord::class, range)
                 result("exercise", records, records.flatMap { listOf(it.startTime, it.endTime) })
             }.getOrElse { errorResult("exercise", it) },
         )
+    }
+
+    private suspend fun <T : Record> readAll(
+        client: HealthConnectClient,
+        recordType: KClass<T>,
+        range: TimeRangeFilter,
+    ): List<T> {
+        val records = mutableListOf<T>()
+        var pageToken: String? = null
+        do {
+            val response = client.readRecords(
+                ReadRecordsRequest(
+                    recordType = recordType,
+                    timeRangeFilter = range,
+                    pageToken = pageToken,
+                ),
+            )
+            records += response.records
+            pageToken = response.pageToken
+        } while (pageToken != null)
+        return records
     }
 
     private fun <T : Record> result(
