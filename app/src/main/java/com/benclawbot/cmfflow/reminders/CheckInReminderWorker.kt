@@ -8,7 +8,7 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import com.benclawbot.cmfflow.MainActivity
+import com.benclawbot.cmfflow.ProductActivity
 import java.time.ZonedDateTime
 
 class CheckInReminderWorker(
@@ -29,7 +29,7 @@ class CheckInReminderWorker(
             ),
         )
 
-        val intent = Intent(applicationContext, MainActivity::class.java)
+        val intent = Intent(applicationContext, ProductActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,
@@ -41,7 +41,7 @@ class CheckInReminderWorker(
         val notification = NotificationCompat.Builder(applicationContext, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("How is your flow right now?")
-            .setContentText("A quick check-in helps the engine learn your patterns.")
+            .setContentText("A quick check-in helps CMF Flow learn your patterns.")
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build()
