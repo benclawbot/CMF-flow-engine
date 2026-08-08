@@ -121,6 +121,9 @@ interface ExperimentAssignmentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(assignment: ExperimentAssignmentEntity): Long
 
+    @Query("SELECT * FROM experiment_assignments ORDER BY assignedAtEpochMs DESC LIMIT 200")
+    fun observeRecent(): Flow<List<ExperimentAssignmentEntity>>
+
     @Query("SELECT * FROM experiment_assignments WHERE experimentId = :experimentId ORDER BY assignedAtEpochMs DESC")
     fun observeForExperiment(experimentId: Long): Flow<List<ExperimentAssignmentEntity>>
 
