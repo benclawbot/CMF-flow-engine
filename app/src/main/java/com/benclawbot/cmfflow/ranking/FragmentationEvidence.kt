@@ -5,6 +5,7 @@ import com.benclawbot.cmfflow.data.SelfReportEntity
 
 data class FragmentationEvidenceEstimate(
     val harmfulAssociation: Boolean,
+    val currentlyHigh: Boolean,
     val adjustment: Double,
     val sampleCount: Int,
     val reasons: List<String>,
@@ -15,9 +16,9 @@ fun fragmentationEvidenceFor(
     reports: List<SelfReportEntity>,
     snapshots: List<ContextSnapshotEntity>,
 ): FragmentationEvidenceEstimate {
-    if (current == null) return FragmentationEvidenceEstimate(false, 0.0, 0, emptyList())
+    if (current == null) return FragmentationEvidenceEstimate(false, false, 0.0, 0, emptyList())
 
-    val currentScore = fragmentationScore(current) ?: return FragmentationEvidenceEstimate(false, 0.0, 0, emptyList())
+    val currentScore = fragmentationScore(current) ?: return FragmentationEvidenceEstimate(false, false, 0.0, 0, emptyList())
     val reportsById = reports.associateBy { it.id }
     val paired = snapshots.mapNotNull { snapshot ->
         val report = reportsById[snapshot.selfReportId] ?: return@mapNotNull null
@@ -26,7 +27,7 @@ fun fragmentationEvidenceFor(
     }
 
     if (paired.size < MIN_FRAGMENTATION_SAMPLES) {
-        return FragmentationEvidenceEstimate(false, 0.0, paired.size, emptyList())
+        return FragmentationEvidenceEstimate(false, false, 0.0, paired.size, emptyList())
     }
 
     val median = paired.map { it.third }.sorted().let { values ->
@@ -37,7 +38,7 @@ fun fragmentationEvidenceFor(
     val high = paired.filter { it.third > median }
     val low = paired.filter { it.third <= median }
     if (high.size < MIN_BUCKET_SAMPLES || low.size < MIN_BUCKET_SAMPLES) {
-        return FragmentationEvidenceEstimate(false, 0.0, paired.size, emptyList())
+        return FragmentationEvidenceEstimate(false, false, 0.0, paired.size, emptyList())
     }
 
     val highUtility = high.map { utility(it.first) }.average()
@@ -54,7 +55,7 @@ fun fragmentationEvidenceFor(
         if (currentHigh) add("fragmentation_currently_high")
     }
 
-    return FragmentationEvidenceEstimate(harmful, adjustment, paired.size, reasons)
+    return FragmentationEvidenceEstimate(harmful, currentHigh, adjustment, paired.size, reasons)
 }
 
 private fun fragmentationScore(snapshot: ContextSnapshotEntity): Int? {
