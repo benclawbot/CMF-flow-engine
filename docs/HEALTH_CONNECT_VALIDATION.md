@@ -19,4 +19,8 @@ The probe now follows `ReadRecordsResponse.pageToken` until no more pages remain
 
 Exercise export remains inconclusive until a known workout is recorded on the watch, synced through Nothing X, and the probe is rerun.
 
-Stress, Active Score, and Training Load are vendor-specific concepts and are not represented by the current standard Health Connect probe. They remain candidates for direct BLE/Gadgetbridge-derived ingestion if they are valuable to the flow model.
+Stress, Active Score, and Training Load are vendor-specific concepts and are not represented by the current standard Health Connect probe.
+
+## Ingestion decision
+
+Health Connect is sufficient as the default MVP ingestion path for heart rate, sleep, steps, and SpO₂. Direct BLE/Gadgetbridge-derived ingestion should therefore not be a prerequisite for the MVP. It remains a later optional provider if exercise fails to export or if stress, Active Score, Training Load, lower-latency data, or higher-resolution raw signals prove valuable enough to justify the maintenance cost.
