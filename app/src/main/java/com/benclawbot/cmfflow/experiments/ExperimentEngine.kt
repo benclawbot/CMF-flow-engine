@@ -20,6 +20,12 @@ data class ExperimentResult(
     val summary: String,
 )
 
+data class LearnedExperimentRecommendation(
+    val experimentId: Long,
+    val condition: String,
+    val utilityAdvantage: Double,
+)
+
 fun chooseNextCondition(
     experiment: ExperimentEntity,
     assignments: List<ExperimentAssignmentEntity>,
@@ -68,6 +74,23 @@ fun analyzeExperiment(
     }
     return ExperimentResult(a, b, delta, ready, summary)
 }
+
+fun learnedExperimentRecommendation(
+    experiments: List<ExperimentEntity>,
+    assignments: List<ExperimentAssignmentEntity>,
+    reports: List<SelfReportEntity>,
+): LearnedExperimentRecommendation? = experiments.asSequence()
+    .map { experiment -> experiment to analyzeExperiment(experiment, assignments, reports) }
+    .mapNotNull { (experiment, result) ->
+        val delta = result.deltaAminusB ?: return@mapNotNull null
+        if (!result.evidenceReady || kotlin.math.abs(delta) < 0.35) return@mapNotNull null
+        LearnedExperimentRecommendation(
+            experimentId = experiment.id,
+            condition = if (delta > 0) experiment.conditionA else experiment.conditionB,
+            utilityAdvantage = kotlin.math.abs(delta),
+        )
+    }
+    .firstOrNull()
 
 private fun utility(report: SelfReportEntity): Double =
     report.flowScore.toDouble() + report.presence.toDouble() - report.fatigue.toDouble()

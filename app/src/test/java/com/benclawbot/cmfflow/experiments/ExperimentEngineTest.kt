@@ -57,6 +57,30 @@ class ExperimentEngineTest {
         assertTrue(result.summary.contains("Walk first"))
     }
 
+
+    @Test
+    fun learnedRecommendationUsesWinningConditionAfterEvidenceThreshold() {
+        val reports = (1L..8L).map { id ->
+            if (id <= 4) report(id, flow = 5, presence = 5, fatigue = 1)
+            else report(id, flow = 3, presence = 3, fatigue = 3)
+        }
+        val assignments = (1L..4L).map { assignment(it, "Walk first") } +
+            (5L..8L).map { assignment(it, "No walk") }
+
+        val learned = learnedExperimentRecommendation(listOf(experiment), assignments, reports)
+        assertEquals("Walk first", learned?.condition)
+        assertTrue((learned?.utilityAdvantage ?: 0.0) >= 0.35)
+    }
+
+    @Test
+    fun learnedRecommendationStaysOffWhenConditionsAreSimilar() {
+        val reports = (1L..8L).map { id -> report(id, flow = 4, presence = 4, fatigue = 2) }
+        val assignments = (1L..4L).map { assignment(it, "Walk first") } +
+            (5L..8L).map { assignment(it, "No walk") }
+
+        assertEquals(null, learnedExperimentRecommendation(listOf(experiment), assignments, reports))
+    }
+
     private fun assignment(reportId: Long, condition: String) = ExperimentAssignmentEntity(
         experimentId = 7,
         assignedCondition = condition,

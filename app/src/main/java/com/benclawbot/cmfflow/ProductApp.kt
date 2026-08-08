@@ -84,6 +84,7 @@ import com.benclawbot.cmfflow.data.SessionEntity
 import com.benclawbot.cmfflow.data.TaskEntity
 import com.benclawbot.cmfflow.experiments.analyzeExperiment
 import com.benclawbot.cmfflow.experiments.chooseNextCondition
+import com.benclawbot.cmfflow.experiments.learnedExperimentRecommendation
 import com.benclawbot.cmfflow.health.HealthConnectProbe
 import com.benclawbot.cmfflow.health.ProbeResult
 import com.benclawbot.cmfflow.interventions.recommendIntervention
@@ -161,14 +162,25 @@ fun ProductApp(
     val openTrialExperiment = experimentHistory.firstOrNull { it.id == openTrial?.experimentId }
     val experimentSuggestionAvailable = experiments.isEmpty() && openTrial == null && reports.size >= 3
     val experimentSuggestion = if (experimentSuggestionAvailable) suggestedExperiment(reports, contexts) else null
+    val learnedExperiment = learnedExperimentRecommendation(experimentHistory, assignments, reports)
+        ?.takeIf { openTrial == null && intervention.action.name == "CONTINUE" }
+    val effectiveInterventionTitle = learnedExperiment?.condition ?: friendlyAction(intervention.action.name)
+    val effectiveInterventionReason = learnedExperiment?.let {
+        "A balanced personal experiment associated this condition with a ${"%.2f".format(it.utilityAdvantage)} higher follow-up utility."
+    } ?: friendlyReason(intervention.reasons)
+    val interventionReasonLabel = if (learnedExperiment != null) "Learned from your experiment" else "Why now"
+    val interventionActionKey = learnedExperiment?.let { "EXPERIMENT:${it.experimentId}:${it.condition}" } ?: intervention.action.name
+    val interventionReasonKeys = learnedExperiment?.let {
+        listOf("balanced_experiment_evidence", "utility_advantage=${"%.2f".format(it.utilityAdvantage)}")
+    } ?: intervention.reasons
 
     var interventionEventId by remember { mutableStateOf<Long?>(null) }
     var recommendationEventId by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(intervention.action, intervention.reasons, session?.id, session?.struggleCount) {
+    LaunchedEffect(interventionActionKey, interventionReasonKeys, session?.id, session?.struggleCount) {
         interventionEventId = recordIntervention(
             InterventionEventEntity(
-                action = intervention.action.name,
-                reasonsSnapshot = intervention.reasons.joinToString("|"),
+                action = interventionActionKey,
+                reasonsSnapshot = interventionReasonKeys.joinToString("|"),
             ),
         )
     }
@@ -207,8 +219,9 @@ fun ProductApp(
                     latest = latest,
                     session = session,
                     sessionMinutes = sessionState.minutesOnCurrentTask,
-                    interventionTitle = friendlyAction(intervention.action.name),
-                    interventionReason = friendlyReason(intervention.reasons),
+                    interventionTitle = effectiveInterventionTitle,
+                    interventionReason = effectiveInterventionReason,
+                    interventionReasonLabel = interventionReasonLabel,
                     topTask = topTask?.task,
                     topTaskReasons = topTask?.reasons.orEmpty(),
                     openTrial = openTrial,
@@ -373,6 +386,7 @@ private fun ProductHomeScreen(
     sessionMinutes: Int?,
     interventionTitle: String,
     interventionReason: String,
+    interventionReasonLabel: String,
     topTask: TaskEntity?,
     topTaskReasons: List<String>,
     openTrial: ExperimentAssignmentEntity?,
@@ -466,7 +480,7 @@ private fun ProductHomeScreen(
         ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(interventionTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("Why now", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                Text(interventionReasonLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                 Text(interventionReason, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onDoIntervention) { Text("Do it") }
