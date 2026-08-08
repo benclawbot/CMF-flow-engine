@@ -40,7 +40,7 @@ class SetupActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE)
         if (preferences.getBoolean(KEY_ONBOARDING_COMPLETE, false)) {
-            startActivity(Intent(this, MainActivity::class.java))
+            startActivity(Intent(this, ProductActivity::class.java))
             finish()
             return
         }
@@ -49,7 +49,7 @@ class SetupActivity : ComponentActivity() {
             FlowTheme {
                 AttentionSetup {
                     preferences.edit().putBoolean(KEY_ONBOARDING_COMPLETE, true).apply()
-                    startActivity(Intent(this, MainActivity::class.java))
+                    startActivity(Intent(this, ProductActivity::class.java))
                     finish()
                 }
             }
