@@ -38,14 +38,27 @@ import com.benclawbot.cmfflow.ui.FlowTheme
 class SetupActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE)
+        if (preferences.getBoolean(KEY_ONBOARDING_COMPLETE, false)) {
+            startActivity(Intent(this, MainActivity::class.java))
+            finish()
+            return
+        }
+
         setContent {
             FlowTheme {
                 AttentionSetup {
+                    preferences.edit().putBoolean(KEY_ONBOARDING_COMPLETE, true).apply()
                     startActivity(Intent(this, MainActivity::class.java))
                     finish()
                 }
             }
         }
+    }
+
+    companion object {
+        private const val PREFERENCES_NAME = "cmf_flow_preferences"
+        private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete_v1"
     }
 }
 
