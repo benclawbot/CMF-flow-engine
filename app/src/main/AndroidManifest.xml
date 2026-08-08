@@ -14,7 +14,9 @@
     <application
         android:name=".FlowApplication"
         android:allowBackup="true"
-        android:label="CMF Flow Engine"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="CMF Flow"
         android:supportsRtl="true"
         android:theme="@style/Theme.CMFFlow">
         <activity
@@ -25,12 +27,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity
-            android:name=".MainActivity"
-            android:exported="false" />
-        <activity
-            android:name=".RationaleActivity"
-            android:exported="true">
+        <activity android:name=".MainActivity" android:exported="false" />
+        <activity android:name=".RationaleActivity" android:exported="true">
             <intent-filter>
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
             </intent-filter>
