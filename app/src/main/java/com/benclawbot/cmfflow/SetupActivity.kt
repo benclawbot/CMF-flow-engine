@@ -99,6 +99,14 @@ private fun AttentionSetup(onContinue: () -> Unit) {
             onEnable = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
         )
 
+        if (!usageGranted || !notificationGranted) {
+            Text(
+                "Sideloaded build? If Android says a setting is restricted, open App info for CMF Flow, tap ⋮, choose “Allow restricted settings”, then try again.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
         Spacer(Modifier.weight(1f))
         Text("Local-first · No cloud account · No notification content stored", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text("Continue to CMF Flow") }
@@ -110,11 +118,11 @@ private fun PermissionCard(title: String, description: String, enabled: Boolean,
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = CircleShape, color = if (enabled) Color(0xFFE5F4EC) else MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(46.dp)) {
-                Box(contentAlignment = Alignment.Center) { Text(if (enabled) "✓" else "○", color = if (enabled) Color(0xFF238257) else MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
+            Surface(shape = CircleShape, color = if (enabled) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(46.dp)) {
+                Box(contentAlignment = Alignment.Center) { Text(if (enabled) "✓" else "○", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
             }
             Spacer(Modifier.size(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
