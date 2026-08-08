@@ -1,6 +1,7 @@
 package com.benclawbot.cmfflow.attention
 
 import android.content.Context
+import androidx.core.content.edit
 
 object NotificationEventStore {
     private const val PREFS = "attention_notifications"
@@ -11,7 +12,7 @@ object NotificationEventStore {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val updated = (read(prefs.getString(KEY_TIMESTAMPS, null)) + epochMs)
             .takeLast(MAX_EVENTS)
-        prefs.edit().putString(KEY_TIMESTAMPS, updated.joinToString(",")).apply()
+        prefs.edit { putString(KEY_TIMESTAMPS, updated.joinToString(",")) }
     }
 
     fun countBetween(context: Context, startEpochMs: Long, endEpochMs: Long): Int? {
