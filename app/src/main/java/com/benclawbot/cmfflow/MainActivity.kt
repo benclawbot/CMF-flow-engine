@@ -13,6 +13,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -66,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -193,9 +195,7 @@ private fun FlowApp(
     var interventionEventId by remember { mutableStateOf<Long?>(null) }
     var recommendationEventId by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(intervention.action, intervention.reasons, session?.id, session?.struggleCount) {
-        interventionEventId = recordIntervention(
-            InterventionEventEntity(action = intervention.action.name, reasonsSnapshot = intervention.reasons.joinToString("|")),
-        )
+        interventionEventId = recordIntervention(InterventionEventEntity(action = intervention.action.name, reasonsSnapshot = intervention.reasons.joinToString("|")))
     }
     LaunchedEffect(topTask?.task?.id, topTask?.score) {
         recommendationEventId = if (topTask == null) null else recordRecommendation(
@@ -234,18 +234,16 @@ private fun FlowApp(
                     interventionReason = friendlyReason(intervention.reasons),
                     topTask = topTask?.task,
                     onCheckIn = saveReport,
-                    onDoIntervention = {
-                        scope.launch { interventionEventId?.let { respondIntervention(it, "accepted") }; notify("Action accepted") }
-                    },
-                    onDismissIntervention = {
-                        scope.launch { interventionEventId?.let { respondIntervention(it, "dismissed") } }
-                    },
+                    onDoIntervention = { scope.launch { interventionEventId?.let { respondIntervention(it, "accepted") }; notify("Action accepted") } },
+                    onDismissIntervention = { scope.launch { interventionEventId?.let { respondIntervention(it, "dismissed") } } },
                     onStartTask = {
-                        val task = topTask?.task ?: return@HomeScreen
-                        scope.launch {
-                            recommendationEventId?.let { respondRecommendation(it, "accepted") }
-                            if (session == null) startSession(SessionEntity(taskId = task.id, taskTitle = task.title, taskDomain = task.domain, startedAtEpochMs = System.currentTimeMillis()))
-                            notify("Focus session started")
+                        val task = topTask?.task
+                        if (task != null) {
+                            scope.launch {
+                                recommendationEventId?.let { respondRecommendation(it, "accepted") }
+                                if (session == null) startSession(SessionEntity(taskId = task.id, taskTitle = task.title, taskDomain = task.domain, startedAtEpochMs = System.currentTimeMillis()))
+                                notify("Focus session started")
+                            }
                         }
                     },
                     onOpenTasks = { tab = AppTab.Tasks },
@@ -257,13 +255,7 @@ private fun FlowApp(
                     rankedTasks = ranked.map { it.task to it.reasons },
                     onAdd = { task -> scope.launch { addTask(task); notify("Task added") } },
                     onDone = { id -> scope.launch { completeTask(id); notify("Task completed") } },
-                    onStart = { task ->
-                        scope.launch {
-                            if (session == null) startSession(SessionEntity(taskId = task.id, taskTitle = task.title, taskDomain = task.domain, startedAtEpochMs = System.currentTimeMillis()))
-                            tab = AppTab.Home
-                            notify("Focus session started")
-                        }
-                    },
+                    onStart = { task -> scope.launch { if (session == null) startSession(SessionEntity(taskId = task.id, taskTitle = task.title, taskDomain = task.domain, startedAtEpochMs = System.currentTimeMillis())); tab = AppTab.Home; notify("Focus session started") } },
                 )
                 AppTab.Experiments -> ExperimentsScreen(
                     experiments = experiments,
@@ -278,37 +270,18 @@ private fun FlowApp(
 
 @Composable
 private fun HomeScreen(
-    latest: SelfReportEntity?,
-    session: SessionEntity?,
-    sessionMinutes: Int?,
-    interventionTitle: String,
-    interventionReason: String,
-    topTask: TaskEntity?,
-    onCheckIn: suspend (SelfReportEntity) -> Unit,
-    onDoIntervention: () -> Unit,
-    onDismissIntervention: () -> Unit,
-    onStartTask: () -> Unit,
-    onOpenTasks: () -> Unit,
-    onEndSession: (Long) -> Unit,
-    onStruggle: (Long) -> Unit,
+    latest: SelfReportEntity?, session: SessionEntity?, sessionMinutes: Int?, interventionTitle: String, interventionReason: String, topTask: TaskEntity?,
+    onCheckIn: suspend (SelfReportEntity) -> Unit, onDoIntervention: () -> Unit, onDismissIntervention: () -> Unit, onStartTask: () -> Unit,
+    onOpenTasks: () -> Unit, onEndSession: (Long) -> Unit, onStruggle: (Long) -> Unit,
 ) {
     var checkIn by remember { mutableStateOf(latest == null) }
     ScreenColumn {
         Text(greeting(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Make the next hour easier to enter.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-            shape = RoundedCornerShape(28.dp),
-        ) {
+        ElevatedCard(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = RoundedCornerShape(28.dp)) {
             Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(if (session != null) "Current focus" else "Your state", color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Text(
-                    if (session != null) session.taskTitle ?: "Focus session" else stateLabel(latest),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
+                Text(if (session != null) session.taskTitle ?: "Focus session" else stateLabel(latest), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 if (session != null) {
                     Text("${sessionMinutes ?: 0} min in focus · ${session.struggleCount} struggle marks")
                     LinearProgressIndicator(progress = { ((sessionMinutes ?: 0) / 60f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
@@ -318,26 +291,19 @@ private fun HomeScreen(
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                        Metric("Flow", latest?.flowScore)
-                        Metric("Presence", latest?.presence)
-                        Metric("Fatigue", latest?.fatigue)
+                        Metric("Flow", latest?.flowScore); Metric("Presence", latest?.presence); Metric("Fatigue", latest?.fatigue)
                     }
                 }
             }
         }
-
         SectionTitle("Right now")
         ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(interventionTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(interventionReason, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onDoIntervention) { Text("Do it") }
-                    TextButton(onClick = onDismissIntervention) { Text("Not now") }
-                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = onDoIntervention) { Text("Do it") }; TextButton(onClick = onDismissIntervention) { Text("Not now") } }
             }
         }
-
         SectionTitle("Best next task")
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -348,18 +314,11 @@ private fun HomeScreen(
                 } else {
                     Text(topTask.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text("${topTask.domain.replaceFirstChar { it.uppercase() }} · ${topTask.estimatedMinutes} min", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = onStartTask) {
-                        Icon(Icons.Filled.PlayArrow, null)
-                        Spacer(Modifier.size(6.dp))
-                        Text("Start focus")
-                    }
+                    Button(onClick = onStartTask) { Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.size(6.dp)); Text("Start focus") }
                 }
             }
         }
-
-        Button(onClick = { checkIn = !checkIn }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (checkIn) "Close check-in" else "Quick check-in")
-        }
+        Button(onClick = { checkIn = !checkIn }, modifier = Modifier.fillMaxWidth()) { Text(if (checkIn) "Close check-in" else "Quick check-in") }
         if (checkIn) CheckInCard(onSave = { report -> onCheckIn(report); checkIn = false })
     }
 }
@@ -371,81 +330,39 @@ private fun InsightsScreen(reports: List<SelfReportEntity>, contexts: List<Conte
         ScreenHeader("Insights", "Patterns from your own data — descriptive until evidence is strong enough.")
         if (reports.isEmpty()) {
             EmptyCard("No insights yet", "A few quick check-ins will turn this into your personal flow map.")
-            return@ScreenColumn
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            InsightMetric("Flow", formatScore(summary.averageFlow), Modifier.weight(1f))
-            InsightMetric("Presence", formatScore(summary.averagePresence), Modifier.weight(1f))
-            InsightMetric("Fatigue", formatScore(summary.averageFatigue), Modifier.weight(1f))
-        }
-        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Recent flow", style = MaterialTheme.typography.titleLarge)
-                Sparkline(reports.take(20).reversed().map { it.flowScore.toFloat() })
-                Text("${reports.size.coerceAtMost(100)} local check-ins available", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                InsightMetric("Flow", formatScore(summary.averageFlow), Modifier.weight(1f)); InsightMetric("Presence", formatScore(summary.averagePresence), Modifier.weight(1f)); InsightMetric("Fatigue", formatScore(summary.averageFatigue), Modifier.weight(1f))
             }
-        }
-        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("What Flow is learning", style = MaterialTheme.typography.titleLarge)
-                val strongest = summary.strongestDomain
-                if (strongest != null) Text("Your strongest sampled domain so far: ${strongest.replaceFirstChar { it.uppercase() }}")
-                else Text("Domain patterns unlock after at least 3 comparable check-ins.")
-                val latestContext = contexts.firstOrNull()
-                if (latestContext != null) {
-                    Text("Recent context")
-                    Text(contextSummary(latestContext), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Recent flow", style = MaterialTheme.typography.titleLarge); Sparkline(reports.take(20).reversed().map { it.flowScore.toFloat() }); Text("${reports.size.coerceAtMost(100)} local check-ins available", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        }
-        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Evidence policy", style = MaterialTheme.typography.titleMedium)
-                Text("Flow waits for minimum sample thresholds and caps learned adjustments, so early coincidences cannot dominate recommendations.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("What Flow is learning", style = MaterialTheme.typography.titleLarge)
+                    val strongest = summary.strongestDomain
+                    if (strongest != null) Text("Your strongest sampled domain so far: ${strongest.replaceFirstChar { it.uppercase() }}") else Text("Domain patterns unlock after at least 3 comparable check-ins.")
+                    contexts.firstOrNull()?.let { Text("Recent context"); Text(contextSummary(it), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
             }
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("Evidence policy", style = MaterialTheme.typography.titleMedium); Text("Flow waits for minimum sample thresholds and caps learned adjustments, so early coincidences cannot dominate recommendations.", color = MaterialTheme.colorScheme.onSurfaceVariant) } }
         }
     }
 }
 
 @Composable
-private fun TasksScreen(
-    rankedTasks: List<Pair<TaskEntity, List<String>>>,
-    onAdd: (TaskEntity) -> Unit,
-    onDone: (Long) -> Unit,
-    onStart: (TaskEntity) -> Unit,
-) {
-    var adding by remember { mutableStateOf(false) }
-    var title by remember { mutableStateOf("") }
-    var domain by remember { mutableStateOf("work") }
-    var value by remember { mutableStateOf(3) }
-    var urgency by remember { mutableStateOf(3) }
-    var difficulty by remember { mutableStateOf(3) }
-    var minutes by remember { mutableStateOf("30") }
-
+private fun TasksScreen(rankedTasks: List<Pair<TaskEntity, List<String>>>, onAdd: (TaskEntity) -> Unit, onDone: (Long) -> Unit, onStart: (TaskEntity) -> Unit) {
+    var adding by remember { mutableStateOf(false) }; var title by remember { mutableStateOf("") }; var domain by remember { mutableStateOf("work") }; var value by remember { mutableStateOf(3) }; var urgency by remember { mutableStateOf(3) }; var difficulty by remember { mutableStateOf(3) }; var minutes by remember { mutableStateOf("30") }
     ScreenColumn {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) { ScreenHeader("Tasks", "Prioritized for your state, not just a static to-do list.") }
-            IconButton(onClick = { adding = !adding }) { Icon(Icons.Filled.Add, "Add task") }
-        }
-        if (adding) {
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), label = { Text("Task") }, singleLine = true)
-                    OutlinedTextField(domain, { domain = it }, Modifier.fillMaxWidth(), label = { Text("Area of life") }, singleLine = true)
-                    Stepper("Value", value) { value = it }
-                    Stepper("Urgency", urgency) { urgency = it }
-                    Stepper("Difficulty", difficulty) { difficulty = it }
-                    OutlinedTextField(minutes, { minutes = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Minutes") }, singleLine = true)
-                    Button(
-                        enabled = title.isNotBlank(),
-                        onClick = {
-                            onAdd(TaskEntity(title = title.trim(), domain = domain.trim().ifBlank { "other" }, valueScore = value, urgencyScore = urgency, difficultyScore = difficulty, estimatedMinutes = minutes.toIntOrNull()?.coerceAtLeast(1) ?: 30))
-                            title = ""
-                            adding = false
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Add task") }
-                }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) { Column(Modifier.weight(1f)) { ScreenHeader("Tasks", "Prioritized for your state, not just a static to-do list.") }; IconButton(onClick = { adding = !adding }) { Icon(Icons.Filled.Add, "Add task") } }
+        if (adding) Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), label = { Text("Task") }, singleLine = true); OutlinedTextField(domain, { domain = it }, Modifier.fillMaxWidth(), label = { Text("Area of life") }, singleLine = true)
+                Stepper("Value", value) { value = it }; Stepper("Urgency", urgency) { urgency = it }; Stepper("Difficulty", difficulty) { difficulty = it }
+                OutlinedTextField(minutes, { minutes = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Minutes") }, singleLine = true)
+                Button(enabled = title.isNotBlank(), onClick = { onAdd(TaskEntity(title = title.trim(), domain = domain.trim().ifBlank { "other" }, valueScore = value, urgencyScore = urgency, difficultyScore = difficulty, estimatedMinutes = minutes.toIntOrNull()?.coerceAtLeast(1) ?: 30)); title = ""; adding = false }, modifier = Modifier.fillMaxWidth()) { Text("Add task") }
             }
         }
         if (rankedTasks.isEmpty()) EmptyCard("Your task list is clear", "Add something when you want help choosing the right next move.")
@@ -453,20 +370,11 @@ private fun TasksScreen(
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
-                            Text("${index + 1}", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(Modifier.size(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(task.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("${task.domain} · ${task.estimatedMinutes} min", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.secondaryContainer) { Text("${index + 1}", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), fontWeight = FontWeight.Bold) }; Spacer(Modifier.size(10.dp))
+                        Column(Modifier.weight(1f)) { Text(task.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold); Text("${task.domain} · ${task.estimatedMinutes} min", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                     if (reasons.isNotEmpty()) Text(reasons.take(2).joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onStart(task) }) { Text("Focus") }
-                        OutlinedButton(onClick = { onDone(task.id) }) { Text("Done") }
-                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { onStart(task) }) { Text("Focus") }; OutlinedButton(onClick = { onDone(task.id) }) { Text("Done") } }
                 }
             }
         }
@@ -474,44 +382,22 @@ private fun TasksScreen(
 }
 
 @Composable
-private fun ExperimentsScreen(
-    experiments: List<ExperimentEntity>,
-    onAdd: (ExperimentEntity) -> Unit,
-    onComplete: (Long) -> Unit,
-) {
-    var adding by remember { mutableStateOf(false) }
-    var hypothesis by remember { mutableStateOf("") }
-    var a by remember { mutableStateOf("") }
-    var b by remember { mutableStateOf("") }
+private fun ExperimentsScreen(experiments: List<ExperimentEntity>, onAdd: (ExperimentEntity) -> Unit, onComplete: (Long) -> Unit) {
+    var adding by remember { mutableStateOf(false) }; var hypothesis by remember { mutableStateOf("") }; var a by remember { mutableStateOf("") }; var b by remember { mutableStateOf("") }
     ScreenColumn {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) { ScreenHeader("Experiments", "Small N-of-1 tests to learn what actually works for you.") }
-            IconButton(onClick = { adding = !adding }) { Icon(Icons.Filled.Add, "Add experiment") }
-        }
-        if (adding) {
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(hypothesis, { hypothesis = it }, Modifier.fillMaxWidth(), label = { Text("Hypothesis") })
-                    OutlinedTextField(a, { a = it }, Modifier.fillMaxWidth(), label = { Text("Condition A") })
-                    OutlinedTextField(b, { b = it }, Modifier.fillMaxWidth(), label = { Text("Condition B") })
-                    Button(enabled = hypothesis.isNotBlank() && a.isNotBlank() && b.isNotBlank(), onClick = {
-                        onAdd(ExperimentEntity(hypothesis = hypothesis.trim(), conditionA = a.trim(), conditionB = b.trim()))
-                        hypothesis = ""; a = ""; b = ""; adding = false
-                    }, modifier = Modifier.fillMaxWidth()) { Text("Create experiment") }
-                }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) { Column(Modifier.weight(1f)) { ScreenHeader("Experiments", "Small N-of-1 tests to learn what actually works for you.") }; IconButton(onClick = { adding = !adding }) { Icon(Icons.Filled.Add, "Add experiment") } }
+        if (adding) Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(hypothesis, { hypothesis = it }, Modifier.fillMaxWidth(), label = { Text("Hypothesis") }); OutlinedTextField(a, { a = it }, Modifier.fillMaxWidth(), label = { Text("Condition A") }); OutlinedTextField(b, { b = it }, Modifier.fillMaxWidth(), label = { Text("Condition B") })
+                Button(enabled = hypothesis.isNotBlank() && a.isNotBlank() && b.isNotBlank(), onClick = { onAdd(ExperimentEntity(hypothesis = hypothesis.trim(), conditionA = a.trim(), conditionB = b.trim())); hypothesis = ""; a = ""; b = ""; adding = false }, modifier = Modifier.fillMaxWidth()) { Text("Create experiment") }
             }
         }
-        if (experiments.isEmpty()) {
-            EmptyCard("No active experiments", "Try questions like “Do 5-minute walks improve my next focus block?” or “Does AI help earlier reduce fatigue?”")
-        }
+        if (experiments.isEmpty()) EmptyCard("No active experiments", "Try questions like “Do 5-minute walks improve my next focus block?” or “Does AI help earlier reduce fatigue?”")
         experiments.forEach { experiment ->
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(experiment.hypothesis, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        ConditionCard("A", experiment.conditionA, Modifier.weight(1f))
-                        ConditionCard("B", experiment.conditionB, Modifier.weight(1f))
-                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) { ConditionCard("A", experiment.conditionA, Modifier.weight(1f)); ConditionCard("B", experiment.conditionB, Modifier.weight(1f)) }
                     Text("Randomized assignment and outcome linkage use your next check-ins; results stay local.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { onComplete(experiment.id) }) { Text("Mark complete") }
                 }
@@ -522,104 +408,41 @@ private fun ExperimentsScreen(
 
 @Composable
 private fun SettingsScreen(probe: HealthConnectProbe, notify: (String) -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var probeResults by remember { mutableStateOf<List<ProbeResult>>(emptyList()) }
-    var probing by remember { mutableStateOf(false) }
-    var permissionRefresh by remember { mutableStateOf(0) }
-    val usage = remember(permissionRefresh) { AttentionAccess.hasUsageAccess(context) }
-    val notifications = remember(permissionRefresh) { AttentionAccess.hasNotificationListenerAccess(context) }
-
-    val healthPermissionLauncher = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted ->
-        notify(if (granted.containsAll(probe.permissions)) "Health Connect connected" else "Some Health Connect permissions remain off")
-    }
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) { CheckInReminderScheduler.enable(context); notify("Check-in reminders enabled") }
-        else notify("Notification permission not granted")
-    }
-
+    val context = LocalContext.current; val scope = rememberCoroutineScope(); var probeResults by remember { mutableStateOf<List<ProbeResult>>(emptyList()) }; var probing by remember { mutableStateOf(false) }; var permissionRefresh by remember { mutableStateOf(0) }
+    val usage = remember(permissionRefresh) { AttentionAccess.hasUsageAccess(context) }; val notifications = remember(permissionRefresh) { AttentionAccess.hasNotificationListenerAccess(context) }
+    val healthPermissionLauncher = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted -> notify(if (granted.containsAll(probe.permissions)) "Health Connect connected" else "Some Health Connect permissions remain off") }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) { CheckInReminderScheduler.enable(context); notify("Check-in reminders enabled") } else notify("Notification permission not granted") }
     ScreenColumn {
         ScreenHeader("Settings", "Privacy, sensing, reminders and diagnostics.")
         SettingsCard("Attention sensing", "Only aggregate counts are stored — never notification text or app content.") {
-            PermissionRow("Usage access", usage) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
-            HorizontalDivider()
-            PermissionRow("Notification access", notifications) { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-            TextButton(onClick = { permissionRefresh++ }) { Text("Refresh status") }
+            PermissionRow("Usage access", usage) { context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }; HorizontalDivider(); PermissionRow("Notification access", notifications) { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }; TextButton(onClick = { permissionRefresh++ }) { Text("Refresh status") }
         }
         SettingsCard("Health Connect", "Heart rate, sleep, steps and SpO₂ can provide context around your check-ins.") {
             Button(onClick = { healthPermissionLauncher.launch(probe.permissions) }) { Text("Manage health access") }
-            OutlinedButton(onClick = {
-                scope.launch { probing = true; probeResults = probe.probe(); probing = false }
-            }) { Text(if (probing) "Checking…" else "Run diagnostics") }
-            if (probeResults.isNotEmpty()) {
-                probeResults.forEach { HealthResultRow(it) }
-            }
+            OutlinedButton(onClick = { scope.launch { probing = true; probeResults = probe.probe(); probing = false } }) { Text(if (probing) "Checking…" else "Run diagnostics") }
+            if (probeResults.isNotEmpty()) probeResults.forEach { HealthResultRow(it) }
         }
         SettingsCard("Check-in reminders", "Optional reminders run roughly every four hours between 08:00 and 21:59.") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    if (Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    else { CheckInReminderScheduler.enable(context); notify("Check-in reminders enabled") }
-                }) { Text("Enable") }
+                Button(onClick = { if (Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) else { CheckInReminderScheduler.enable(context); notify("Check-in reminders enabled") } }) { Text("Enable") }
                 OutlinedButton(onClick = { CheckInReminderScheduler.disable(context); notify("Check-in reminders disabled") }) { Text("Disable") }
             }
         }
-        SettingsCard("Privacy", "CMF Flow is local-first. Health and attention context stay on this device in the current MVP.") {
-            Text("No cloud account required", color = MaterialTheme.colorScheme.primary)
-            Text("No notification content stored", color = MaterialTheme.colorScheme.primary)
-            Text("No raw app-switch history persisted", color = MaterialTheme.colorScheme.primary)
-        }
+        SettingsCard("Privacy", "CMF Flow is local-first. Health and attention context stay on this device in the current MVP.") { Text("No cloud account required", color = MaterialTheme.colorScheme.primary); Text("No notification content stored", color = MaterialTheme.colorScheme.primary); Text("No raw app-switch history persisted", color = MaterialTheme.colorScheme.primary) }
     }
 }
 
 @Composable
 private fun CheckInCard(onSave: suspend (SelfReportEntity) -> Unit) {
-    val scope = rememberCoroutineScope()
-    var flow by remember { mutableStateOf(3) }
-    var absorption by remember { mutableStateOf(3) }
-    var effortless by remember { mutableStateOf(3) }
-    var reward by remember { mutableStateOf(3) }
-    var presence by remember { mutableStateOf(3) }
-    var fatigue by remember { mutableStateOf(2) }
-    var activity by remember { mutableStateOf("") }
-    var domain by remember { mutableStateOf("") }
-    var more by remember { mutableStateOf(false) }
-    var difficulty by remember { mutableStateOf(3) }
-    var clarity by remember { mutableStateOf(3) }
-    var control by remember { mutableStateOf(3) }
-
+    val scope = rememberCoroutineScope(); var flow by remember { mutableStateOf(3) }; var absorption by remember { mutableStateOf(3) }; var effortless by remember { mutableStateOf(3) }; var reward by remember { mutableStateOf(3) }; var presence by remember { mutableStateOf(3) }; var fatigue by remember { mutableStateOf(2) }; var activity by remember { mutableStateOf("") }; var domain by remember { mutableStateOf("") }; var more by remember { mutableStateOf(false) }; var difficulty by remember { mutableStateOf(3) }; var clarity by remember { mutableStateOf(3) }; var control by remember { mutableStateOf(3) }
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("How are you doing?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text("About 20 seconds. This is the ground truth Flow learns from.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Stepper("Flow", flow) { flow = it }
-            Stepper("Absorption", absorption) { absorption = it }
-            Stepper("Effortless control", effortless) { effortless = it }
-            Stepper("Enjoyment", reward) { reward = it }
-            Stepper("Presence", presence) { presence = it }
-            Stepper("Fatigue", fatigue) { fatigue = it }
-            OutlinedTextField(activity, { activity = it }, Modifier.fillMaxWidth(), label = { Text("What are you doing? (optional)") }, singleLine = true)
-            OutlinedTextField(domain, { domain = it }, Modifier.fillMaxWidth(), label = { Text("Area of life (optional)") }, singleLine = true)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(more, { more = it })
-                Spacer(Modifier.size(8.dp))
-                Text("More context")
-            }
-            if (more) {
-                Stepper("Difficulty", difficulty) { difficulty = it }
-                Stepper("Goal clarity", clarity) { clarity = it }
-                Stepper("Control", control) { control = it }
-            }
-            Button(onClick = {
-                scope.launch {
-                    onSave(SelfReportEntity(
-                        capturedAtEpochMs = System.currentTimeMillis(),
-                        flowScore = flow, absorption = absorption, effortlessControl = effortless, intrinsicReward = reward, presence = presence, fatigue = fatigue,
-                        activityLabel = activity.trim().ifBlank { null }, domain = domain.trim().ifBlank { null },
-                        taskDifficulty = difficulty.takeIf { more }, goalClarity = clarity.takeIf { more }, perceivedControl = control.takeIf { more }, notes = null,
-                    ))
-                }
-            }, modifier = Modifier.fillMaxWidth()) { Text("Save check-in") }
+            Text("How are you doing?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold); Text("About 20 seconds. This is the ground truth Flow learns from.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Stepper("Flow", flow) { flow = it }; Stepper("Absorption", absorption) { absorption = it }; Stepper("Effortless control", effortless) { effortless = it }; Stepper("Enjoyment", reward) { reward = it }; Stepper("Presence", presence) { presence = it }; Stepper("Fatigue", fatigue) { fatigue = it }
+            OutlinedTextField(activity, { activity = it }, Modifier.fillMaxWidth(), label = { Text("What are you doing? (optional)") }, singleLine = true); OutlinedTextField(domain, { domain = it }, Modifier.fillMaxWidth(), label = { Text("Area of life (optional)") }, singleLine = true)
+            Row(verticalAlignment = Alignment.CenterVertically) { Switch(more, { more = it }); Spacer(Modifier.size(8.dp)); Text("More context") }
+            if (more) { Stepper("Difficulty", difficulty) { difficulty = it }; Stepper("Goal clarity", clarity) { clarity = it }; Stepper("Control", control) { control = it } }
+            Button(onClick = { scope.launch { onSave(SelfReportEntity(capturedAtEpochMs = System.currentTimeMillis(), flowScore = flow, absorption = absorption, effortlessControl = effortless, intrinsicReward = reward, presence = presence, fatigue = fatigue, activityLabel = activity.trim().ifBlank { null }, domain = domain.trim().ifBlank { null }, taskDifficulty = difficulty.takeIf { more }, goalClarity = clarity.takeIf { more }, perceivedControl = control.takeIf { more }, notes = null)) } }, modifier = Modifier.fillMaxWidth()) { Text("Save check-in") }
         }
     }
 }
@@ -627,22 +450,11 @@ private fun CheckInCard(onSave: suspend (SelfReportEntity) -> Unit) {
 @Composable
 private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(label, Modifier.weight(1f))
-            Text("$value / 5", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) { Text(label, Modifier.weight(1f)); Text("$value / 5", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             (1..5).forEach { n ->
                 val selected = value == n
-                Surface(
-                    onClick = { onChange(n) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                ) {
-                    Box(Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) { Text(n.toString(), fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) }
-                }
+                Surface(onClick = { onChange(n) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant) { Box(Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) { Text(n.toString(), fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) } }
             }
         }
     }
@@ -650,169 +462,36 @@ private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit) {
 
 @Composable
 private fun Sparkline(values: List<Float>) {
-    val lineColor = MaterialTheme.colorScheme.primary
+    val lineColor = MaterialTheme.colorScheme.primary; val gridColor = MaterialTheme.colorScheme.outlineVariant
     Canvas(Modifier.fillMaxWidth().height(130.dp)) {
         if (values.size < 2) return@Canvas
-        val min = 0f
-        val max = 5f
-        val step = size.width / (values.size - 1).coerceAtLeast(1)
-        val path = Path()
-        values.forEachIndexed { index, raw ->
-            val value = raw.coerceIn(min, max)
-            val x = index * step
-            val y = size.height - ((value - min) / (max - min)) * size.height
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        drawLine(MaterialTheme.colorScheme.outlineVariant, Offset(0f, size.height * .5f), Offset(size.width, size.height * .5f), strokeWidth = 1f)
-        drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f))
+        val step = size.width / (values.size - 1).coerceAtLeast(1); val path = Path()
+        values.forEachIndexed { index, raw -> val value = raw.coerceIn(0f, 5f); val x = index * step; val y = size.height - (value / 5f) * size.height; if (index == 0) path.moveTo(x, y) else path.lineTo(x, y) }
+        drawLine(gridColor, Offset(0f, size.height * .5f), Offset(size.width, size.height * .5f), strokeWidth = 1f); drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f))
     }
 }
 
-@Composable
-private fun InsightMetric(label: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier, shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(14.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        }
-    }
-}
+@Composable private fun InsightMetric(label: String, value: String, modifier: Modifier = Modifier) { Card(modifier, shape = RoundedCornerShape(20.dp)) { Column(Modifier.padding(14.dp)) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall); Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) } } }
+@Composable private fun Metric(label: String, value: Int?) { Column { Text(label, style = MaterialTheme.typography.bodySmall); Text(value?.toString() ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) } }
+@Composable private fun ConditionCard(label: String, text: String, modifier: Modifier) { Surface(modifier, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant) { Column(Modifier.padding(14.dp)) { Text(label, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold); Text(text) } } }
 
 @Composable
-private fun Metric(label: String, value: Int?) {
-    Column { Text(label, style = MaterialTheme.typography.bodySmall); Text(value?.toString() ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+private fun SettingsCard(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold); Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant); content() } }
 }
 
-@Composable
-private fun ConditionCard(label: String, text: String, modifier: Modifier) {
-    Surface(modifier, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-        Column(Modifier.padding(14.dp)) { Text(label, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold); Text(text) }
-    }
-}
+@Composable private fun PermissionRow(label: String, granted: Boolean, onClick: () -> Unit) { Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) { Icon(if (granted) Icons.Filled.CheckCircle else Icons.Filled.Settings, null, tint = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.size(10.dp)); Column(Modifier.weight(1f)) { Text(label, fontWeight = FontWeight.SemiBold); Text(if (granted) "Enabled" else "Not enabled", color = MaterialTheme.colorScheme.onSurfaceVariant) }; TextButton(onClick = onClick) { Text(if (granted) "Manage" else "Enable") } } }
+@Composable private fun HealthResultRow(result: ProbeResult) { val ok = result.error == null && result.recordCount > 0; Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) { Icon(if (ok) Icons.Filled.CheckCircle else Icons.Filled.Favorite, null, tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.size(10.dp)); Column(Modifier.weight(1f)) { Text(result.type.replace('_', ' ').replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.SemiBold); Text(if (result.error != null) "Unavailable" else "${result.recordCount} records · ${formatEpochShort(result.latestEpochMs)}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } } }
+@Composable private fun EmptyCard(title: String, body: String) { Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Filled.Science, null, modifier = Modifier.size(34.dp), tint = MaterialTheme.colorScheme.primary); Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold); Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
+@Composable private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) { Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content) }
+@Composable private fun ScreenHeader(title: String, subtitle: String) { Column(verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+@Composable private fun SectionTitle(text: String) { Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
 
-@Composable
-private fun SettingsCard(title: String, subtitle: String, content: @Composable Column.() -> Unit) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            @Suppress("UNCHECKED_CAST")
-            (content as @Composable Column.() -> Unit).invoke(this)
-        }
-    }
-}
-
-@Composable
-private fun PermissionRow(label: String, granted: Boolean, onClick: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Icon(if (granted) Icons.Filled.CheckCircle else Icons.Filled.Settings, null, tint = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.size(10.dp))
-        Column(Modifier.weight(1f)) { Text(label, fontWeight = FontWeight.SemiBold); Text(if (granted) "Enabled" else "Not enabled", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        TextButton(onClick = onClick) { Text(if (granted) "Manage" else "Enable") }
-    }
-}
-
-@Composable
-private fun HealthResultRow(result: ProbeResult) {
-    val ok = result.error == null && result.recordCount > 0
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Icon(if (ok) Icons.Filled.CheckCircle else Icons.Filled.Favorite, null, tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.size(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(result.type.replace('_', ' ').replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.SemiBold)
-            Text(if (result.error != null) "Unavailable" else "${result.recordCount} records · ${formatEpochShort(result.latestEpochMs)}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-private fun EmptyCard(title: String, body: String) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Filled.Science, null, modifier = Modifier.size(34.dp), tint = MaterialTheme.colorScheme.primary)
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun ScreenColumn(content: @Composable Column.() -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        content = content,
-    )
-}
-
-@Composable
-private fun ScreenHeader(title: String, subtitle: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun SectionTitle(text: String) { Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
-
-private fun tabIcon(tab: AppTab) = when (tab) {
-    AppTab.Home -> Icons.Filled.Home
-    AppTab.Insights -> Icons.Filled.BarChart
-    AppTab.Tasks -> Icons.Filled.TaskAlt
-    AppTab.Experiments -> Icons.Filled.Science
-    AppTab.Settings -> Icons.Filled.Settings
-}
-
-private fun greeting(): String {
-    val hour = java.time.LocalTime.now().hour
-    return when (hour) {
-        in 5..11 -> "Good morning"
-        in 12..17 -> "Good afternoon"
-        else -> "Good evening"
-    }
-}
-
-private fun stateLabel(report: SelfReportEntity?): String {
-    if (report == null) return "Ready to learn you"
-    return when {
-        report.fatigue >= 4 -> "Recovery mode"
-        report.flowScore >= 4 && report.presence >= 4 -> "Flow is available"
-        report.presence <= 2 -> "Attention is scattered"
-        else -> "Balanced state"
-    }
-}
-
-private fun friendlyAction(action: String): String = when (action) {
-    "CONTINUE" -> "Keep going"
-    "SWITCH_TASK" -> "Switch the task"
-    "REDUCE_DIFFICULTY" -> "Make it easier"
-    "ASK_AI" -> "Get AI help"
-    "TAKE_BREAK" -> "Take a short break"
-    "EXERCISE" -> "Move for a few minutes"
-    "STOP" -> "Call it for now"
-    "REDUCE_INTERRUPTION" -> "Protect your attention"
-    else -> action.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }
-}
-
-private fun friendlyReason(reasons: List<String>): String {
-    if (reasons.isEmpty()) return "Based on your latest state and what Flow has learned so far."
-    val raw = reasons.first().replace('_', ' ').lowercase()
-    return raw.replaceFirstChar { it.uppercase() } + "."
-}
-
-private fun contextSummary(context: ContextSnapshotEntity): String {
-    val parts = mutableListOf<String>()
-    context.sleepMinutesLast24h?.let { parts += "${it / 60}h sleep" }
-    context.stepsLast30m?.let { parts += "$it recent steps" }
-    context.appSwitchCount?.let { parts += "$it app switches" }
-    context.notificationCount?.let { parts += "$it notifications" }
-    return if (parts.isEmpty()) "Context captured; richer signals are still accumulating." else parts.joinToString(" · ")
-}
-
+private fun tabIcon(tab: AppTab): ImageVector = when (tab) { AppTab.Home -> Icons.Filled.Home; AppTab.Insights -> Icons.Filled.BarChart; AppTab.Tasks -> Icons.Filled.TaskAlt; AppTab.Experiments -> Icons.Filled.Science; AppTab.Settings -> Icons.Filled.Settings }
+private fun greeting(): String = when (java.time.LocalTime.now().hour) { in 5..11 -> "Good morning"; in 12..17 -> "Good afternoon"; else -> "Good evening" }
+private fun stateLabel(report: SelfReportEntity?): String { if (report == null) return "Ready to learn you"; return when { report.fatigue >= 4 -> "Recovery mode"; report.flowScore >= 4 && report.presence >= 4 -> "Flow is available"; report.presence <= 2 -> "Attention is scattered"; else -> "Balanced state" } }
+private fun friendlyAction(action: String): String = when (action) { "CONTINUE" -> "Keep going"; "SWITCH_TASK" -> "Switch the task"; "REDUCE_DIFFICULTY" -> "Make it easier"; "ASK_AI" -> "Get AI help"; "TAKE_BREAK" -> "Take a short break"; "EXERCISE" -> "Move for a few minutes"; "STOP" -> "Call it for now"; "REDUCE_INTERRUPTION" -> "Protect your attention"; else -> action.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() } }
+private fun friendlyReason(reasons: List<String>): String { if (reasons.isEmpty()) return "Based on your latest state and what Flow has learned so far."; val raw = reasons.first().replace('_', ' ').lowercase(); return raw.replaceFirstChar { it.uppercase() } + "." }
+private fun contextSummary(context: ContextSnapshotEntity): String { val parts = mutableListOf<String>(); context.sleepMinutesPrevious24h?.let { parts += "${it / 60}h sleep" }; context.stepCount?.let { parts += "$it recent steps" }; context.appSwitchCount?.let { parts += "$it app switches" }; context.notificationCount?.let { parts += "$it notifications" }; return if (parts.isEmpty()) "Context captured; richer signals are still accumulating." else parts.joinToString(" · ") }
 private fun formatScore(value: Double?): String = value?.let { "%.1f".format(it) } ?: "—"
-
-private fun formatEpochShort(epochMs: Long?): String {
-    if (epochMs == null) return "no recent data"
-    return DateTimeFormatter.ofPattern("MMM d, HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(epochMs))
-}
+private fun formatEpochShort(epochMs: Long?): String { if (epochMs == null) return "no recent data"; return DateTimeFormatter.ofPattern("MMM d, HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(epochMs)) }
