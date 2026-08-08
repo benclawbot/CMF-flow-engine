@@ -7,6 +7,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.benclawbot.cmfflow.health.HealthConnectProbe
 import com.benclawbot.cmfflow.health.HealthContextCollector
+import com.benclawbot.cmfflow.reminders.CheckInReminderScheduler
 import com.benclawbot.cmfflow.ui.FlowTheme
 
 class ProductActivity : ComponentActivity() {
@@ -23,6 +24,7 @@ class ProductActivity : ComponentActivity() {
             val tasks by database.taskDao().observeOpen().collectAsState(initial = emptyList())
             val session by database.sessionDao().observeActive().collectAsState(initial = null)
             val experiments by database.experimentDao().observeActive().collectAsState(initial = emptyList())
+            val experimentHistory by database.experimentDao().observeRecent().collectAsState(initial = emptyList())
             val assignments by database.experimentAssignmentDao().observeRecent().collectAsState(initial = emptyList())
 
             FlowTheme {
@@ -34,6 +36,7 @@ class ProductActivity : ComponentActivity() {
                     tasks = tasks,
                     session = session,
                     experiments = experiments,
+                    experimentHistory = experimentHistory,
                     assignments = assignments,
                     saveReport = { report ->
                         val reportId = database.selfReportDao().insert(report)
@@ -41,6 +44,7 @@ class ProductActivity : ComponentActivity() {
                         database.recommendationEventDao().attachOutcomeToLatestResponded(reportId)
                         database.interventionEventDao().attachOutcomeToLatestResponded(reportId)
                         database.experimentAssignmentDao().attachOutcomeToLatestOpen(reportId, System.currentTimeMillis())
+                        CheckInReminderScheduler.markCheckIn(this@ProductActivity, report.capturedAtEpochMs)
                     },
                     addTask = { database.taskDao().insert(it) },
                     completeTask = { database.taskDao().markDone(it) },

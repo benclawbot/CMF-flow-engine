@@ -15,6 +15,8 @@
 - Added Health Connect integration for CMF Watch Pro 2 / Nothing X context.
 - Added balanced randomized N-of-1 experiments with linked follow-up outcomes and minimum-evidence result thresholds.
 - Added optional check-in reminders.
+- Completed the product loop from recommendations and shared tasks through outcome check-ins, evidence-backed experiments and learned insights.
+- Added context-aware check-ins that reuse active task context and suppress redundant reminders after recent outcomes.
 
 ### Health Connect
 
