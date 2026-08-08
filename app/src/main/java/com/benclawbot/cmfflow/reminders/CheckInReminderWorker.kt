@@ -19,6 +19,7 @@ class CheckInReminderWorker(
     override fun doWork(): Result {
         val hour = ZonedDateTime.now().hour
         if (hour !in 8..21) return Result.success()
+        if (!CheckInReminderScheduler.shouldRemind(applicationContext)) return Result.success()
 
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         val channelId = "flow_check_ins"
@@ -41,8 +42,8 @@ class CheckInReminderWorker(
 
         val notification = NotificationCompat.Builder(applicationContext, channelId)
             .setSmallIcon(R.drawable.ic_flow_foreground)
-            .setContentTitle("How is your flow right now?")
-            .setContentText("A quick check-in helps CMF Flow learn your patterns.")
+            .setContentTitle("Has your state changed?")
+            .setContentText("If it has, a quick check-in helps Flow learn without asking for data it already has.")
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build()

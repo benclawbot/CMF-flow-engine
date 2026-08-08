@@ -84,6 +84,7 @@ import com.benclawbot.cmfflow.data.SessionEntity
 import com.benclawbot.cmfflow.data.TaskEntity
 import com.benclawbot.cmfflow.experiments.analyzeExperiment
 import com.benclawbot.cmfflow.experiments.chooseNextCondition
+import com.benclawbot.cmfflow.experiments.learnedExperimentRecommendation
 import com.benclawbot.cmfflow.health.HealthConnectProbe
 import com.benclawbot.cmfflow.health.ProbeResult
 import com.benclawbot.cmfflow.interventions.recommendIntervention
@@ -101,6 +102,11 @@ private enum class ProductTab(val label: String) {
     Home("Home"), Insights("Insights"), Tasks("Tasks"), Experiments("Experiments"), Settings("Settings")
 }
 
+private data class CheckInContext(
+    val activityLabel: String?,
+    val domain: String?,
+)
+
 @Composable
 fun ProductApp(
     probe: HealthConnectProbe,
@@ -110,6 +116,7 @@ fun ProductApp(
     tasks: List<TaskEntity>,
     session: SessionEntity?,
     experiments: List<ExperimentEntity>,
+    experimentHistory: List<ExperimentEntity>,
     assignments: List<ExperimentAssignmentEntity>,
     saveReport: suspend (SelfReportEntity) -> Unit,
     addTask: suspend (TaskEntity) -> Long,
@@ -129,6 +136,8 @@ fun ProductApp(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val notify: (String) -> Unit = { message -> scope.launch { snackbar.showSnackbar(message) } }
+    var checkInRequest by remember { mutableStateOf(0) }
+    var pendingCheckInContext by remember { mutableStateOf<CheckInContext?>(null) }
 
     val latest = reports.firstOrNull()
     val sessionState = sessionSignals(session)
@@ -150,15 +159,28 @@ fun ProductApp(
     )
     val topTask = ranked.firstOrNull()
     val openTrial = assignments.firstOrNull { it.outcomeSelfReportId == null }
-    val openTrialExperiment = experiments.firstOrNull { it.id == openTrial?.experimentId }
+    val openTrialExperiment = experimentHistory.firstOrNull { it.id == openTrial?.experimentId }
+    val experimentSuggestionAvailable = experiments.isEmpty() && openTrial == null && reports.size >= 3
+    val experimentSuggestion = if (experimentSuggestionAvailable) suggestedExperiment(reports, contexts) else null
+    val learnedExperiment = learnedExperimentRecommendation(experimentHistory, assignments, reports)
+        ?.takeIf { openTrial == null && intervention.action.name == "CONTINUE" }
+    val effectiveInterventionTitle = learnedExperiment?.condition ?: friendlyAction(intervention.action.name)
+    val effectiveInterventionReason = learnedExperiment?.let {
+        "A balanced personal experiment associated this condition with a ${"%.2f".format(it.utilityAdvantage)} higher follow-up utility."
+    } ?: friendlyReason(intervention.reasons)
+    val interventionReasonLabel = if (learnedExperiment != null) "Learned from your experiment" else "Why now"
+    val interventionActionKey = learnedExperiment?.let { "EXPERIMENT:${it.experimentId}:${it.condition}" } ?: intervention.action.name
+    val interventionReasonKeys = learnedExperiment?.let {
+        listOf("balanced_experiment_evidence", "utility_advantage=${"%.2f".format(it.utilityAdvantage)}")
+    } ?: intervention.reasons
 
     var interventionEventId by remember { mutableStateOf<Long?>(null) }
     var recommendationEventId by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(intervention.action, intervention.reasons, session?.id, session?.struggleCount) {
+    LaunchedEffect(interventionActionKey, interventionReasonKeys, session?.id, session?.struggleCount) {
         interventionEventId = recordIntervention(
             InterventionEventEntity(
-                action = intervention.action.name,
-                reasonsSnapshot = intervention.reasons.joinToString("|"),
+                action = interventionActionKey,
+                reasonsSnapshot = interventionReasonKeys.joinToString("|"),
             ),
         )
     }
@@ -197,12 +219,21 @@ fun ProductApp(
                     latest = latest,
                     session = session,
                     sessionMinutes = sessionState.minutesOnCurrentTask,
-                    interventionTitle = friendlyAction(intervention.action.name),
-                    interventionReason = friendlyReason(intervention.reasons),
+                    interventionTitle = effectiveInterventionTitle,
+                    interventionReason = effectiveInterventionReason,
+                    interventionReasonLabel = interventionReasonLabel,
                     topTask = topTask?.task,
+                    topTaskReasons = topTask?.reasons.orEmpty(),
                     openTrial = openTrial,
                     openTrialExperiment = openTrialExperiment,
-                    onCheckIn = saveReport,
+                    experimentSuggestionTitle = experimentSuggestion?.hypothesis,
+                    experimentSuggestionReason = experimentSuggestion?.let { suggestionReason(reports, contexts) },
+                    checkInRequest = checkInRequest,
+                    checkInContext = pendingCheckInContext ?: session?.let { CheckInContext(it.taskTitle, it.taskDomain) },
+                    onCheckIn = { report ->
+                        saveReport(report)
+                        pendingCheckInContext = null
+                    },
                     onDoIntervention = {
                         scope.launch {
                             interventionEventId?.let { respondIntervention(it, "accepted") }
@@ -216,7 +247,8 @@ fun ProductApp(
                         val task = topTask?.task ?: return@ProductHomeScreen
                         scope.launch {
                             recommendationEventId?.let { respondRecommendation(it, "accepted") }
-                            if (session == null) {
+                            if (session?.taskId != task.id) {
+                                session?.let { endSession(it.id) }
                                 startSession(
                                     SessionEntity(
                                         taskId = task.id,
@@ -226,25 +258,61 @@ fun ProductApp(
                                     ),
                                 )
                             }
-                            notify("Focus session started")
+                            notify(if (session?.taskId == task.id) "Already focusing on this task" else "Focus session started")
                         }
                     },
                     onOpenTasks = { tab = ProductTab.Tasks },
+                    onReviewExperiment = { tab = ProductTab.Experiments },
                     onCompleteTask = { id ->
                         scope.launch {
+                            val active = session?.takeIf { it.taskId == id }
+                            active?.let { pendingCheckInContext = CheckInContext(it.taskTitle, it.taskDomain) }
                             completeTask(id)
-                            if (session?.taskId == id) endSession(session.id)
+                            active?.let {
+                                endSession(it.id)
+                                checkInRequest++
+                            }
                             notify("Task completed")
                         }
                     },
-                    onEndSession = { id -> scope.launch { endSession(id); notify("Session ended") } },
+                    onEndSession = { id ->
+                        scope.launch {
+                            session?.takeIf { it.id == id }?.let {
+                                pendingCheckInContext = CheckInContext(it.taskTitle, it.taskDomain)
+                            }
+                            endSession(id)
+                            checkInRequest++
+                            notify("Session ended — capture the outcome while it is fresh")
+                        }
+                    },
                     onStruggle = { id -> scope.launch { markStruggle(id); notify("Struggle noted") } },
                 )
-                ProductTab.Insights -> ProductInsightsScreen(reports, contexts)
+                ProductTab.Insights -> ProductInsightsScreen(
+                    reports = reports,
+                    contexts = contexts,
+                    experimentHistory = experimentHistory,
+                    assignments = assignments,
+                    experimentSuggestionAvailable = experimentSuggestionAvailable,
+                    onReviewExperiment = { tab = ProductTab.Experiments },
+                )
                 ProductTab.Tasks -> ProductTasksScreen(
                     rankedTasks = ranked.map { it.task to it.reasons },
+                    openTrial = openTrial,
+                    openTrialExperiment = openTrialExperiment,
                     onAdd = { task -> scope.launch { addTask(task); notify("Task added") } },
-                    onDone = { id -> scope.launch { completeTask(id); notify("Task completed") } },
+                    onDone = { id ->
+                        scope.launch {
+                            val active = session?.takeIf { it.taskId == id }
+                            active?.let { pendingCheckInContext = CheckInContext(it.taskTitle, it.taskDomain) }
+                            completeTask(id)
+                            if (active != null) {
+                                endSession(active.id)
+                                checkInRequest++
+                                tab = ProductTab.Home
+                            }
+                            notify("Task completed")
+                        }
+                    },
                     onStart = { task ->
                         scope.launch {
                             session?.let { endSession(it.id) }
@@ -318,19 +386,29 @@ private fun ProductHomeScreen(
     sessionMinutes: Int?,
     interventionTitle: String,
     interventionReason: String,
+    interventionReasonLabel: String,
     topTask: TaskEntity?,
+    topTaskReasons: List<String>,
     openTrial: ExperimentAssignmentEntity?,
     openTrialExperiment: ExperimentEntity?,
+    experimentSuggestionTitle: String?,
+    experimentSuggestionReason: String?,
+    checkInRequest: Int,
+    checkInContext: CheckInContext?,
     onCheckIn: suspend (SelfReportEntity) -> Unit,
     onDoIntervention: () -> Unit,
     onDismissIntervention: () -> Unit,
     onStartTask: () -> Unit,
     onOpenTasks: () -> Unit,
+    onReviewExperiment: () -> Unit,
     onCompleteTask: (Long) -> Unit,
     onEndSession: (Long) -> Unit,
     onStruggle: (Long) -> Unit,
 ) {
     var checkIn by remember { mutableStateOf(latest == null) }
+    LaunchedEffect(checkInRequest) {
+        if (checkInRequest > 0) checkIn = true
+    }
     val gradient = Brush.linearGradient(listOf(Color(0xFF5D3BE8), Color(0xFF9478FF)))
     ProductScreenColumn {
         Text(greeting(), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
@@ -375,8 +453,25 @@ private fun ProductHomeScreen(
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ACTIVE EXPERIMENT", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
                     Text(openTrial.assignedCondition, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(openTrialExperiment.hypothesis, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Do this condition now. Your next check-in completes the trial automatically.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(openTrialExperiment.hypothesis, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Text("Do this condition now. Your next check-in completes the trial automatically.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                }
+            }
+        }
+
+        if (openTrial == null && experimentSuggestionTitle != null) {
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            ) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("READY TO TEST", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
+                    Text(experimentSuggestionTitle, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
+                    experimentSuggestionReason?.let {
+                        Text(it, color = MaterialTheme.colorScheme.onPrimaryContainer, style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedButton(onClick = onReviewExperiment) { Text("Review experiment") }
                 }
             }
         }
@@ -385,6 +480,7 @@ private fun ProductHomeScreen(
         ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(interventionTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(interventionReasonLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                 Text(interventionReason, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onDoIntervention) { Text("Do it") }
@@ -403,6 +499,8 @@ private fun ProductHomeScreen(
                 } else {
                     Text(topTask.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("${topTask.domain.replaceFirstChar { it.uppercase() }} · ${topTask.estimatedMinutes} min", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Why Flow picked this", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    Text(friendlyTaskReasons(topTaskReasons), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = onStartTask) {
                             Icon(Icons.Filled.PlayArrow, null)
@@ -418,13 +516,27 @@ private fun ProductHomeScreen(
         Button(onClick = { checkIn = !checkIn }, modifier = Modifier.fillMaxWidth()) {
             Text(if (checkIn) "Close check-in" else if (openTrial != null) "Complete trial check-in" else "Quick check-in")
         }
-        if (checkIn) ProductCheckInCard(onSave = { report -> onCheckIn(report); checkIn = false })
+        if (checkIn) ProductCheckInCard(
+            activityLabel = checkInContext?.activityLabel,
+            domain = checkInContext?.domain,
+            onSave = { report -> onCheckIn(report); checkIn = false },
+        )
     }
 }
 
 @Composable
-private fun ProductInsightsScreen(reports: List<SelfReportEntity>, contexts: List<ContextSnapshotEntity>) {
+private fun ProductInsightsScreen(
+    reports: List<SelfReportEntity>,
+    contexts: List<ContextSnapshotEntity>,
+    experimentHistory: List<ExperimentEntity>,
+    assignments: List<ExperimentAssignmentEntity>,
+    experimentSuggestionAvailable: Boolean,
+    onReviewExperiment: () -> Unit,
+) {
     val summary = summarize(reports)
+    val latestReadyExperiment = experimentHistory.asSequence()
+        .map { experiment -> experiment to analyzeExperiment(experiment, assignments, reports) }
+        .firstOrNull { (_, result) -> result.evidenceReady }
     ProductScreenColumn {
         ScreenHeader("Insights", "Signals become patterns only after repeated, comparable evidence.")
         if (reports.isEmpty()) {
@@ -474,6 +586,34 @@ private fun ProductInsightsScreen(reports: List<SelfReportEntity>, contexts: Lis
             }
         }
 
+        latestReadyExperiment?.let { (experiment, result) ->
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp)) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("What testing changed", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(experiment.hypothesis, fontWeight = FontWeight.SemiBold)
+                    Text(result.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    result.deltaAminusB?.let { delta ->
+                        Text("Estimated utility difference A−B: ${"%.2f".format(delta)}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("This result now feeds future recommendations, while remaining bounded by Flow's evidence guardrails.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        if (experimentSuggestionAvailable) {
+            ElevatedCard(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            ) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("A signal is ready to test", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
+                    Text("Flow can turn the current observation into a controlled experiment instead of guessing from correlation.", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    OutlinedButton(onClick = onReviewExperiment) { Text("Review suggested experiment") }
+                }
+            }
+        }
+
         Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Evidence guardrails", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -486,6 +626,8 @@ private fun ProductInsightsScreen(reports: List<SelfReportEntity>, contexts: Lis
 @Composable
 private fun ProductTasksScreen(
     rankedTasks: List<Pair<TaskEntity, List<String>>>,
+    openTrial: ExperimentAssignmentEntity?,
+    openTrialExperiment: ExperimentEntity?,
     onAdd: (TaskEntity) -> Unit,
     onDone: (Long) -> Unit,
     onStart: (TaskEntity) -> Unit,
@@ -502,6 +644,19 @@ private fun ProductTasksScreen(
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) { ScreenHeader("Tasks", "The same state-aware queue used on Home. Changes update both views.") }
             IconButton(onClick = { adding = !adding }) { Icon(Icons.Filled.Add, "Add task") }
+        }
+        if (openTrial != null && openTrialExperiment != null) {
+            ElevatedCard(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("SYSTEM ACTION · ACTIVE EXPERIMENT", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer, fontWeight = FontWeight.SemiBold)
+                    Text(openTrial.assignedCondition, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer, fontWeight = FontWeight.Bold)
+                    Text("This is the same active action shown on Home. Your next check-in records its outcome.", color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
         if (adding) {
             ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp)) {
@@ -584,7 +739,7 @@ private fun ProductExperimentsScreen(
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Trial in progress", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(openTrial.assignedCondition, style = MaterialTheme.typography.headlineSmall)
-                    Text("Your next check-in records the outcome automatically. Flow will keep the result separate from stronger evidence until enough balanced trials accumulate.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Your next check-in records the outcome automatically. Flow will keep the result separate from stronger evidence until enough balanced trials accumulate.", color = MaterialTheme.colorScheme.onTertiaryContainer)
                 }
             }
         }
@@ -681,7 +836,7 @@ private fun ProductSettingsScreen(probe: HealthConnectProbe, notify: (String) ->
             }) { Text(if (probing) "Checking…" else "Run diagnostics") }
             results.forEach { HealthResultRow(it) }
         }
-        SettingsCard("Check-in reminders", "Optional reminders run roughly every four hours during the day.") {
+        SettingsCard("Check-in reminders", "Optional daytime reminders are suppressed when you checked in recently.") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
                     if (Build.VERSION.SDK_INT >= 33) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -706,7 +861,11 @@ private fun ProductSettingsScreen(probe: HealthConnectProbe, notify: (String) ->
 }
 
 @Composable
-private fun ProductCheckInCard(onSave: suspend (SelfReportEntity) -> Unit) {
+private fun ProductCheckInCard(
+    activityLabel: String?,
+    domain: String?,
+    onSave: suspend (SelfReportEntity) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     var flow by remember { mutableStateOf(3) }
     var absorption by remember { mutableStateOf(3) }
@@ -714,29 +873,43 @@ private fun ProductCheckInCard(onSave: suspend (SelfReportEntity) -> Unit) {
     var reward by remember { mutableStateOf(3) }
     var presence by remember { mutableStateOf(3) }
     var fatigue by remember { mutableStateOf(2) }
-    var activity by remember { mutableStateOf("") }
-    var domain by remember { mutableStateOf("") }
+    var activity by remember(activityLabel) { mutableStateOf(activityLabel.orEmpty()) }
+    var reportDomain by remember(domain) { mutableStateOf(domain.orEmpty()) }
     var more by remember { mutableStateOf(false) }
     var difficulty by remember { mutableStateOf(3) }
     var clarity by remember { mutableStateOf(3) }
     var control by remember { mutableStateOf(3) }
+    val attachedContext = listOfNotNull(
+        activityLabel?.takeIf { it.isNotBlank() },
+        domain?.takeIf { it.isNotBlank() }?.replaceFirstChar(Char::uppercase),
+    )
 
     ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("How are you doing?", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("About 20 seconds. This is the ground truth Flow learns from.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Capture the outcome", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Flow attaches device and health context automatically. Only rate the subjective signals it cannot reliably infer.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (attachedContext.isNotEmpty()) {
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("Context attached automatically", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        Text(attachedContext.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
             ScorePicker("Flow", flow) { flow = it }
             ScorePicker("Absorption", absorption) { absorption = it }
             ScorePicker("Effortless control", effortless) { effortless = it }
             ScorePicker("Enjoyment", reward) { reward = it }
             ScorePicker("Presence", presence) { presence = it }
             ScorePicker("Fatigue", fatigue) { fatigue = it }
-            OutlinedTextField(activity, { activity = it }, Modifier.fillMaxWidth(), label = { Text("What are you doing? (optional)") }, singleLine = true)
-            OutlinedTextField(domain, { domain = it }, Modifier.fillMaxWidth(), label = { Text("Area of life (optional)") }, singleLine = true)
+            if (attachedContext.isEmpty()) {
+                OutlinedTextField(activity, { activity = it }, Modifier.fillMaxWidth(), label = { Text("What are you doing? (optional)") }, singleLine = true)
+                OutlinedTextField(reportDomain, { reportDomain = it }, Modifier.fillMaxWidth(), label = { Text("Area of life (optional)") }, singleLine = true)
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(more, { more = it })
                 Spacer(Modifier.size(8.dp))
-                Text("More context")
+                Text("Add optional subjective detail")
             }
             if (more) {
                 ScorePicker("Difficulty", difficulty) { difficulty = it }
@@ -756,7 +929,7 @@ private fun ProductCheckInCard(onSave: suspend (SelfReportEntity) -> Unit) {
                                 presence = presence,
                                 fatigue = fatigue,
                                 activityLabel = activity.trim().ifBlank { null },
-                                domain = domain.trim().ifBlank { null },
+                                domain = reportDomain.trim().ifBlank { null },
                                 taskDifficulty = difficulty.takeIf { more },
                                 goalClarity = clarity.takeIf { more },
                                 perceivedControl = control.takeIf { more },
@@ -766,7 +939,7 @@ private fun ProductCheckInCard(onSave: suspend (SelfReportEntity) -> Unit) {
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Save check-in") }
+            ) { Text("Save outcome") }
         }
     }
 }
@@ -802,7 +975,7 @@ private fun Sparkline(values: List<Float>) {
     val line = MaterialTheme.colorScheme.primary
     val grid = MaterialTheme.colorScheme.outlineVariant
     val fill = MaterialTheme.colorScheme.primaryContainer
-    Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+    Canvas(Modifier.fillMaxWidth().height(120.dp)) {
         if (values.size < 2) return@Canvas
         val step = size.width / (values.size - 1)
         val path = Path()
@@ -940,8 +1113,8 @@ private fun EmptyCard(title: String, body: String) {
 @Composable
 private fun ProductScreenColumn(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         content = content,
     )
 }

@@ -1,0 +1,688 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 10,
+    "identityHash": "bc54fd2951c108c0e18184ba89b09917",
+    "entities": [
+      {
+        "tableName": "self_reports",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `capturedAtEpochMs` INTEGER NOT NULL, `flowScore` INTEGER NOT NULL, `absorption` INTEGER NOT NULL, `effortlessControl` INTEGER NOT NULL, `intrinsicReward` INTEGER NOT NULL, `presence` INTEGER NOT NULL, `fatigue` INTEGER NOT NULL, `activityLabel` TEXT, `domain` TEXT, `taskDifficulty` INTEGER, `goalClarity` INTEGER, `perceivedControl` INTEGER, `notes` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAtEpochMs",
+            "columnName": "capturedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "flowScore",
+            "columnName": "flowScore",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "absorption",
+            "columnName": "absorption",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "effortlessControl",
+            "columnName": "effortlessControl",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intrinsicReward",
+            "columnName": "intrinsicReward",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "presence",
+            "columnName": "presence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fatigue",
+            "columnName": "fatigue",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activityLabel",
+            "columnName": "activityLabel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "domain",
+            "columnName": "domain",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "taskDifficulty",
+            "columnName": "taskDifficulty",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "goalClarity",
+            "columnName": "goalClarity",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "perceivedControl",
+            "columnName": "perceivedControl",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "context_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `selfReportId` INTEGER NOT NULL, `capturedAtEpochMs` INTEGER NOT NULL, `windowStartEpochMs` INTEGER NOT NULL, `windowEndEpochMs` INTEGER NOT NULL, `localHour` INTEGER NOT NULL, `localDayOfWeek` INTEGER NOT NULL, `batteryPercent` INTEGER, `isCharging` INTEGER, `isPhoneInteractive` INTEGER, `usageAccessGranted` INTEGER NOT NULL, `appSwitchCount` INTEGER, `unlockCount` INTEGER, `screenInteractiveTransitions` INTEGER, `notificationCount` INTEGER, `heartRateRecordCount` INTEGER NOT NULL, `heartRateSampleCount` INTEGER NOT NULL, `heartRateMinBpm` REAL, `heartRateMaxBpm` REAL, `heartRateMeanBpm` REAL, `stepCount` INTEGER, `sleepMinutesPrevious24h` INTEGER, `healthDataOrigins` TEXT NOT NULL, `collectionError` TEXT, FOREIGN KEY(`selfReportId`) REFERENCES `self_reports`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selfReportId",
+            "columnName": "selfReportId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAtEpochMs",
+            "columnName": "capturedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "windowStartEpochMs",
+            "columnName": "windowStartEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "windowEndEpochMs",
+            "columnName": "windowEndEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localHour",
+            "columnName": "localHour",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localDayOfWeek",
+            "columnName": "localDayOfWeek",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batteryPercent",
+            "columnName": "batteryPercent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isCharging",
+            "columnName": "isCharging",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isPhoneInteractive",
+            "columnName": "isPhoneInteractive",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "usageAccessGranted",
+            "columnName": "usageAccessGranted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appSwitchCount",
+            "columnName": "appSwitchCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "unlockCount",
+            "columnName": "unlockCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "screenInteractiveTransitions",
+            "columnName": "screenInteractiveTransitions",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "notificationCount",
+            "columnName": "notificationCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "heartRateRecordCount",
+            "columnName": "heartRateRecordCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "heartRateSampleCount",
+            "columnName": "heartRateSampleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "heartRateMinBpm",
+            "columnName": "heartRateMinBpm",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "heartRateMaxBpm",
+            "columnName": "heartRateMaxBpm",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "heartRateMeanBpm",
+            "columnName": "heartRateMeanBpm",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "stepCount",
+            "columnName": "stepCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sleepMinutesPrevious24h",
+            "columnName": "sleepMinutesPrevious24h",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "healthDataOrigins",
+            "columnName": "healthDataOrigins",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "collectionError",
+            "columnName": "collectionError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_context_snapshots_selfReportId",
+            "unique": false,
+            "columnNames": [
+              "selfReportId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_context_snapshots_selfReportId` ON `${TABLE_NAME}` (`selfReportId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "self_reports",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "selfReportId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "tasks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `domain` TEXT NOT NULL, `valueScore` INTEGER NOT NULL, `urgencyScore` INTEGER NOT NULL, `difficultyScore` INTEGER NOT NULL, `estimatedMinutes` INTEGER NOT NULL, `status` TEXT NOT NULL, `dueAtEpochMs` INTEGER, `createdAtEpochMs` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "domain",
+            "columnName": "domain",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "valueScore",
+            "columnName": "valueScore",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "urgencyScore",
+            "columnName": "urgencyScore",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "difficultyScore",
+            "columnName": "difficultyScore",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimatedMinutes",
+            "columnName": "estimatedMinutes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueAtEpochMs",
+            "columnName": "dueAtEpochMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtEpochMs",
+            "columnName": "createdAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "recommendation_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `taskId` INTEGER NOT NULL, `taskTitle` TEXT NOT NULL, `taskDomain` TEXT NOT NULL, `presentedAtEpochMs` INTEGER NOT NULL, `score` REAL NOT NULL, `reasonsSnapshot` TEXT NOT NULL, `response` TEXT, `respondedAtEpochMs` INTEGER, `outcomeSelfReportId` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskId",
+            "columnName": "taskId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskTitle",
+            "columnName": "taskTitle",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskDomain",
+            "columnName": "taskDomain",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "presentedAtEpochMs",
+            "columnName": "presentedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "score",
+            "columnName": "score",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reasonsSnapshot",
+            "columnName": "reasonsSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "response",
+            "columnName": "response",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "respondedAtEpochMs",
+            "columnName": "respondedAtEpochMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "outcomeSelfReportId",
+            "columnName": "outcomeSelfReportId",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_recommendation_events_taskId",
+            "unique": false,
+            "columnNames": [
+              "taskId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_recommendation_events_taskId` ON `${TABLE_NAME}` (`taskId`)"
+          },
+          {
+            "name": "index_recommendation_events_outcomeSelfReportId",
+            "unique": false,
+            "columnNames": [
+              "outcomeSelfReportId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_recommendation_events_outcomeSelfReportId` ON `${TABLE_NAME}` (`outcomeSelfReportId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "intervention_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `action` TEXT NOT NULL, `presentedAtEpochMs` INTEGER NOT NULL, `reasonsSnapshot` TEXT NOT NULL, `response` TEXT, `respondedAtEpochMs` INTEGER, `outcomeSelfReportId` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "action",
+            "columnName": "action",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "presentedAtEpochMs",
+            "columnName": "presentedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reasonsSnapshot",
+            "columnName": "reasonsSnapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "response",
+            "columnName": "response",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "respondedAtEpochMs",
+            "columnName": "respondedAtEpochMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "outcomeSelfReportId",
+            "columnName": "outcomeSelfReportId",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_intervention_events_outcomeSelfReportId",
+            "unique": false,
+            "columnNames": [
+              "outcomeSelfReportId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_intervention_events_outcomeSelfReportId` ON `${TABLE_NAME}` (`outcomeSelfReportId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `taskId` INTEGER, `taskTitle` TEXT, `taskDomain` TEXT, `startedAtEpochMs` INTEGER NOT NULL, `endedAtEpochMs` INTEGER, `struggleCount` INTEGER NOT NULL, `status` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskId",
+            "columnName": "taskId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "taskTitle",
+            "columnName": "taskTitle",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "taskDomain",
+            "columnName": "taskDomain",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startedAtEpochMs",
+            "columnName": "startedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAtEpochMs",
+            "columnName": "endedAtEpochMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "struggleCount",
+            "columnName": "struggleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sessions_taskId",
+            "unique": false,
+            "columnNames": [
+              "taskId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sessions_taskId` ON `${TABLE_NAME}` (`taskId`)"
+          },
+          {
+            "name": "index_sessions_startedAtEpochMs",
+            "unique": false,
+            "columnNames": [
+              "startedAtEpochMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sessions_startedAtEpochMs` ON `${TABLE_NAME}` (`startedAtEpochMs`)"
+          }
+        ]
+      },
+      {
+        "tableName": "experiments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `hypothesis` TEXT NOT NULL, `conditionA` TEXT NOT NULL, `conditionB` TEXT NOT NULL, `primaryOutcome` TEXT NOT NULL, `status` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hypothesis",
+            "columnName": "hypothesis",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conditionA",
+            "columnName": "conditionA",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conditionB",
+            "columnName": "conditionB",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "primaryOutcome",
+            "columnName": "primaryOutcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMs",
+            "columnName": "createdAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "experiment_assignments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `experimentId` INTEGER NOT NULL, `assignedCondition` TEXT NOT NULL, `assignedAtEpochMs` INTEGER NOT NULL, `completedAtEpochMs` INTEGER, `outcomeSelfReportId` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "experimentId",
+            "columnName": "experimentId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assignedCondition",
+            "columnName": "assignedCondition",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assignedAtEpochMs",
+            "columnName": "assignedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAtEpochMs",
+            "columnName": "completedAtEpochMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "outcomeSelfReportId",
+            "columnName": "outcomeSelfReportId",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_experiment_assignments_experimentId",
+            "unique": false,
+            "columnNames": [
+              "experimentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_experiment_assignments_experimentId` ON `${TABLE_NAME}` (`experimentId`)"
+          },
+          {
+            "name": "index_experiment_assignments_outcomeSelfReportId",
+            "unique": false,
+            "columnNames": [
+              "outcomeSelfReportId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_experiment_assignments_outcomeSelfReportId` ON `${TABLE_NAME}` (`outcomeSelfReportId`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'bc54fd2951c108c0e18184ba89b09917')"
+    ]
+  }
+}

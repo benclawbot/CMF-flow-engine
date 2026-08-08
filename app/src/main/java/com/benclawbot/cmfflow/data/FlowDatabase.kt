@@ -112,6 +112,9 @@ interface ExperimentDao {
     @Query("SELECT * FROM experiments WHERE status = 'active' ORDER BY createdAtEpochMs DESC")
     fun observeActive(): Flow<List<ExperimentEntity>>
 
+    @Query("SELECT * FROM experiments ORDER BY createdAtEpochMs DESC LIMIT 50")
+    fun observeRecent(): Flow<List<ExperimentEntity>>
+
     @Query("UPDATE experiments SET status = 'completed' WHERE id = :experimentId")
     suspend fun complete(experimentId: Long)
 }
