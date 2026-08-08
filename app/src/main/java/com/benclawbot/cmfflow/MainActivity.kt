@@ -45,6 +45,7 @@ import com.benclawbot.cmfflow.health.HealthContextCollector
 import com.benclawbot.cmfflow.health.ProbeResult
 import com.benclawbot.cmfflow.interventions.recommendIntervention
 import com.benclawbot.cmfflow.interventions.sessionSignals
+import com.benclawbot.cmfflow.ranking.fragmentationEvidenceFor
 import com.benclawbot.cmfflow.ranking.rankTasks
 import com.benclawbot.cmfflow.reminders.CheckInReminderScheduler
 import kotlinx.coroutines.launch
@@ -218,10 +219,17 @@ private fun FlowHome(
         LearningPreview(recentReports)
 
         val sessionState = sessionSignals(activeSession)
+        val fragmentationEvidence = fragmentationEvidenceFor(
+            current = recentContexts.firstOrNull(),
+            reports = recentReports,
+            snapshots = recentContexts,
+        )
         val intervention = recommendIntervention(
             latestReport = recentReports.firstOrNull(),
             minutesOnCurrentTask = sessionState.minutesOnCurrentTask,
             repeatedStruggle = sessionState.repeatedStruggle,
+            learnedFragmentationHarm = fragmentationEvidence.harmfulAssociation,
+            currentlyHighFragmentation = fragmentationEvidence.currentlyHigh,
         )
         LaunchedEffect(intervention.action, intervention.reasons, activeSession?.id, activeSession?.struggleCount) {
             activeInterventionEventId = recordIntervention(
