@@ -104,9 +104,51 @@ interface SessionDao {
     suspend fun end(sessionId: Long, endedAtEpochMs: Long)
 }
 
+@Dao
+interface ExperimentDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(experiment: ExperimentEntity): Long
+
+    @Query("SELECT * FROM experiments WHERE status = 'active' ORDER BY createdAtEpochMs DESC")
+    fun observeActive(): Flow<List<ExperimentEntity>>
+
+    @Query("UPDATE experiments SET status = 'completed' WHERE id = :experimentId")
+    suspend fun complete(experimentId: Long)
+}
+
+@Dao
+interface ExperimentAssignmentDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(assignment: ExperimentAssignmentEntity): Long
+
+    @Query("SELECT * FROM experiment_assignments WHERE experimentId = :experimentId ORDER BY assignedAtEpochMs DESC")
+    fun observeForExperiment(experimentId: Long): Flow<List<ExperimentAssignmentEntity>>
+
+    @Query("""
+        UPDATE experiment_assignments
+        SET completedAtEpochMs = :completedAtEpochMs, outcomeSelfReportId = :selfReportId
+        WHERE id = (
+            SELECT id FROM experiment_assignments
+            WHERE completedAtEpochMs IS NULL AND outcomeSelfReportId IS NULL
+            ORDER BY assignedAtEpochMs DESC
+            LIMIT 1
+        )
+    """)
+    suspend fun attachOutcomeToLatestOpen(selfReportId: Long, completedAtEpochMs: Long)
+}
+
 @Database(
-    entities = [SelfReportEntity::class, ContextSnapshotEntity::class, TaskEntity::class, RecommendationEventEntity::class, InterventionEventEntity::class, SessionEntity::class],
-    version = 9,
+    entities = [
+        SelfReportEntity::class,
+        ContextSnapshotEntity::class,
+        TaskEntity::class,
+        RecommendationEventEntity::class,
+        InterventionEventEntity::class,
+        SessionEntity::class,
+        ExperimentEntity::class,
+        ExperimentAssignmentEntity::class,
+    ],
+    version = 10,
     exportSchema = true,
 )
 abstract class FlowDatabase : RoomDatabase() {
@@ -116,4 +158,6 @@ abstract class FlowDatabase : RoomDatabase() {
     abstract fun recommendationEventDao(): RecommendationEventDao
     abstract fun interventionEventDao(): InterventionEventDao
     abstract fun sessionDao(): SessionDao
+    abstract fun experimentDao(): ExperimentDao
+    abstract fun experimentAssignmentDao(): ExperimentAssignmentDao
 }
