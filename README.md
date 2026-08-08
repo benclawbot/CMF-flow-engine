@@ -1,52 +1,77 @@
-# Flow Agent
+# CMF Flow
 
-A local-first personal system for learning the conditions that support subjective flow while minimizing long-term fatigue across work and life.
+CMF Flow is a local-first Android app that helps one person learn the conditions that support subjective flow while protecting against cumulative fatigue.
 
-## Goals
+The core loop is:
 
-- Optimize for **subjective flow**, not raw screen time or productivity.
-- Minimize cumulative fatigue and protect long-term performance.
-- Learn a personalized model from self-reports and passive context.
-- Recommend actions rather than forcibly controlling behavior.
-- Prioritize tasks using AI based on value, urgency, difficulty, current state, and expected flow fit.
-- Support personal experiments to discover causal effects.
-- Keep sensitive data local by default.
+`Observe → Estimate state → Recommend → Act → Check in → Learn`
 
-## Initial hardware / surfaces
+## CMF Flow 1.0
 
-- Android phone — primary compute, storage, self-report, task planning, notifications.
-- CMF Watch Pro 2 — heart rate, sleep, activity and other accessible health context through Health Connect first; direct BLE is a later fallback/research path.
-- Laptop integration — later phase.
+The 1.0 product includes:
 
-## Core loop
+- A polished Material 3 Android experience with Home, Insights, Tasks, Experiments and Settings.
+- One-time onboarding with optional attention-sensing setup.
+- A real adaptive launcher icon and system light/dark theme support.
+- 20-second subjective check-ins for flow, absorption, effortless control, enjoyment, presence and fatigue.
+- Health Connect context from the CMF Watch Pro 2 / Nothing X path, including confirmed heart rate, sleep, steps and SpO₂ export.
+- Privacy-preserving attention context using aggregate app-switch, unlock, screen-transition and notification counts. Notification text and app-switch history are not persisted.
+- State-aware task ranking using value, urgency, difficulty fit, fatigue guardrails and bounded personalized evidence.
+- A session-aware intervention policy that can recommend continuing, switching, simplifying, asking AI for help, taking a break, exercising, stopping or reducing interruptions.
+- Feedback and outcome learning from recommendation acceptance/rejection and subsequent check-ins.
+- Balanced randomized N-of-1 experiments. One trial is active at a time, the next check-in records its outcome, and comparison results remain hidden until minimum evidence thresholds are met.
+- Optional check-in reminders.
+- Local Room persistence with non-destructive migrations.
+- Android backup disabled so the app database is not included in normal app backup flows.
 
-`Observe → Estimate state → Recommend → Self-report → Learn`
+## Privacy model
 
-The primary ground-truth label is a lightweight subjective flow score supplied by the user.
+CMF Flow is designed for personal, local-first use.
 
-## MVP
+- No cloud account is required.
+- Health Connect data is read locally.
+- Notification content is never stored.
+- Raw app/package transition history is not persisted.
+- Android app backup is disabled.
+- Data is protected by the Android application sandbox and the device's storage protections. The current database is **not** independently SQLCipher-encrypted, so the project does not claim application-level database encryption.
 
-1. Android app with local encrypted persistence.
-2. Health Connect capability probe and ingestion.
-3. 0–5 flow and fatigue self-reports.
-4. Context snapshots around reports.
-5. Manual task list with user-defined difficulty.
-6. AI-assisted task prioritization.
-7. Rule-based recommendation engine first.
-8. Personal experiment framework.
-9. Local analytics and export.
-10. Prediction only after enough labeled data exists.
+See [`PRIVACY.md`](PRIVACY.md) for the full data-handling description.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/MVP.md](docs/MVP.md), and [docs/DATA_MODEL.md](docs/DATA_MODEL.md).
+## Hardware path
 
-## Principles
+The supported product path is:
 
-- The system may recommend **do nothing**.
-- Physiological signals are noisy context, not medical truth.
-- Rejected recommendations are useful feedback.
-- No cloud dependency is required for the core loop.
-- Models should start simple and become more sophisticated only when the data justifies it.
+- **Android phone:** compute, storage, UI, task planning, reminders and local learning.
+- **CMF Watch Pro 2:** health context through Nothing X → Health Connect.
+
+Real-device validation has confirmed Nothing X origin package `com.nothing.smartcenter` for the supported exported signals. Direct BLE/Gadgetbridge ingestion is not required for the 1.0 product and is reserved for possible future vendor-only metrics or lower-latency research.
+
+The remaining hardware-only checks are tracked in GitHub issue #1 and do not block the software release candidate.
+
+## Development
+
+Requirements:
+
+- JDK 17
+- Android SDK 36
+- Gradle 8.13
+
+CI runs Android lint, unit tests and a debug APK build on every push to `main` and on pull requests.
+
+```bash
+gradle --no-daemon :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+```
+
+## Design principles
+
+- Optimize for subjective flow, not maximum activity or screen time.
+- Treat physiological data as noisy context, not medical truth.
+- Protect long-term performance and fatigue guardrails before optimizing short-term output.
+- Allow “do nothing” or “stop” to be valid recommendations.
+- Treat rejected recommendations as useful feedback.
+- Use association language unless an experiment supports a stronger causal interpretation.
+- Require minimum evidence before personalization can change behavior.
 
 ## Status
 
-Repository scaffold / design phase.
+**1.0.0 release candidate.** Software completeness is gated by CI; the only open repository issue is explicitly hardware-validation-only.
