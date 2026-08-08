@@ -36,8 +36,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    // Lifecycle 2.11.0 requires compileSdk 37 and AGP 9.1; 2.9.1 is the validated API-36 line for this release.
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
 
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("androidx.work:work-runtime:2.11.2")
