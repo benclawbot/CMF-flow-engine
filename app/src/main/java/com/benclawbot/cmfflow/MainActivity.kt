@@ -16,11 +16,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,6 +53,7 @@ import com.benclawbot.cmfflow.interventions.sessionSignals
 import com.benclawbot.cmfflow.ranking.fragmentationEvidenceFor
 import com.benclawbot.cmfflow.ranking.rankTasks
 import com.benclawbot.cmfflow.reminders.CheckInReminderScheduler
+import com.benclawbot.cmfflow.ui.FlowTheme
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -66,7 +72,8 @@ class MainActivity : ComponentActivity() {
             val recentRecommendations by database.recommendationEventDao().observeRecent().collectAsState(initial = emptyList())
             val openTasks by database.taskDao().observeOpen().collectAsState(initial = emptyList())
             val activeSession by database.sessionDao().observeActive().collectAsState(initial = null)
-            MaterialTheme {
+
+            FlowTheme {
                 FlowHome(
                     probe = probe,
                     recentReports = recentReports,
@@ -78,19 +85,14 @@ class MainActivity : ComponentActivity() {
                     markTaskDone = { database.taskDao().markDone(it) },
                     startSession = { database.sessionDao().insert(it) },
                     recordStruggle = { database.sessionDao().recordStruggle(it) },
-                    endSession = { sessionId -> database.sessionDao().end(sessionId, System.currentTimeMillis()) },
+                    endSession = { database.sessionDao().end(it, System.currentTimeMillis()) },
                     recordRecommendation = { database.recommendationEventDao().insert(it) },
-                    recordRecommendationResponse = { eventId, response ->
-                        database.recommendationEventDao().recordResponse(eventId, response, System.currentTimeMillis())
-                    },
+                    recordRecommendationResponse = { id, response -> database.recommendationEventDao().recordResponse(id, response, System.currentTimeMillis()) },
                     recordIntervention = { database.interventionEventDao().insert(it) },
-                    recordInterventionResponse = { eventId, response ->
-                        database.interventionEventDao().recordResponse(eventId, response, System.currentTimeMillis())
-                    },
+                    recordInterventionResponse = { id, response -> database.interventionEventDao().recordResponse(id, response, System.currentTimeMillis()) },
                     save = { report ->
                         val reportId = database.selfReportDao().insert(report)
-                        val snapshot = contextCollector.collect(reportId, report.capturedAtEpochMs)
-                        database.contextSnapshotDao().insert(snapshot)
+                        database.contextSnapshotDao().insert(contextCollector.collect(reportId, report.capturedAtEpochMs))
                         database.recommendationEventDao().attachOutcomeToLatestResponded(reportId)
                         database.interventionEventDao().attachOutcomeToLatestResponded(reportId)
                         reportId
@@ -122,6 +124,10 @@ private fun FlowHome(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var showCheckIn by remember { mutableStateOf(recentReports.isEmpty()) }
+    var showTaskForm by remember { mutableStateOf(false) }
+    var showInsights by remember { mutableStateOf(false) }
+    var showHealth by remember { mutableStateOf(false) }
     var flow by remember { mutableStateOf(3f) }
     var absorption by remember { mutableStateOf(3f) }
     var effortless by remember { mutableStateOf(3f) }
@@ -147,309 +153,306 @@ private fun FlowHome(
     var status by remember { mutableStateOf("Ready") }
     var results by remember { mutableStateOf<List<ProbeResult>>(emptyList()) }
 
-    val healthPermissionLauncher = rememberLauncherForActivityResult(
-        PermissionController.createRequestPermissionResultContract(),
-    ) { granted ->
-        status = if (granted.containsAll(probe.permissions)) "Health permissions granted" else "Some health permissions were denied"
+    val healthPermissionLauncher = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { granted ->
+        status = if (granted.containsAll(probe.permissions)) "Health access connected" else "Some health access is still off"
     }
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             CheckInReminderScheduler.enable(context)
             status = "Check-in reminders enabled"
-        } else {
-            status = "Notification permission denied; reminders not enabled"
+        } else status = "Reminders need notification permission"
+    }
+
+    val latest = recentReports.firstOrNull()
+    val sessionState = sessionSignals(activeSession)
+    val fragmentationEvidence = fragmentationEvidenceFor(recentContexts.firstOrNull(), recentReports, recentContexts)
+    val intervention = recommendIntervention(
+        latestReport = latest,
+        minutesOnCurrentTask = sessionState.minutesOnCurrentTask,
+        repeatedStruggle = sessionState.repeatedStruggle,
+        learnedFragmentationHarm = fragmentationEvidence.harmfulAssociation,
+        currentlyHighFragmentation = fragmentationEvidence.currentlyHigh,
+    )
+    LaunchedEffect(intervention.action, intervention.reasons, activeSession?.id, activeSession?.struggleCount) {
+        activeInterventionEventId = recordIntervention(InterventionEventEntity(action = intervention.action.name, reasonsSnapshot = intervention.reasons.joinToString("|")))
+        interventionResponse = null
+    }
+
+    val ranked = rankTasks(
+        tasks = openTasks,
+        latestReport = latest,
+        historicalReports = recentReports,
+        currentContext = recentContexts.firstOrNull(),
+        historicalContexts = recentContexts,
+        recommendationEvents = recentRecommendations,
+    )
+    val topTask = ranked.firstOrNull()
+    LaunchedEffect(topTask?.task?.id, topTask?.score) {
+        if (topTask != null) {
+            activeRecommendationEventId = recordRecommendation(
+                RecommendationEventEntity(
+                    taskId = topTask.task.id,
+                    taskTitle = topTask.task.title,
+                    taskDomain = topTask.task.domain,
+                    score = topTask.score,
+                    reasonsSnapshot = topTask.reasons.joinToString("|"),
+                ),
+            )
+            recommendationResponse = null
         }
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("CMF Flow Engine", style = MaterialTheme.typography.headlineMedium)
-        Text("Quick subjective label first. Context is optional and health context is captured automatically.")
+        Text("CMF Flow", style = MaterialTheme.typography.headlineMedium)
+        Text("One useful next step, not more noise.", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        Score("Overall flow", flow) { flow = it }
-        Score("Absorption", absorption) { absorption = it }
-        Score("Effortless control", effortless) { effortless = it }
-        Score("Intrinsic reward", reward) { reward = it }
-        Score("Presence", presence) { presence = it }
-        Score("Fatigue", fatigue) { fatigue = it }
+        StateCard(latest, activeSession, sessionState.minutesOnCurrentTask)
 
-        OutlinedTextField(value = activity, onValueChange = { activity = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Activity (optional)") }, singleLine = true)
-        OutlinedTextField(value = domain, onValueChange = { domain = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Domain (optional, e.g. work, cooking, family)") }, singleLine = true)
-
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Switch(checked = advanced, onCheckedChange = { advanced = it })
-            Text("Add antecedent context")
-        }
-        if (advanced) {
-            Text("These are predictors, not part of the flow label.")
-            Score("Task difficulty", difficulty) { difficulty = it }
-            Score("Goal clarity", goalClarity) { goalClarity = it }
-            Score("Perceived control", perceivedControl) { perceivedControl = it }
-        }
-
-        Button(onClick = {
-            scope.launch {
-                val capturedAt = System.currentTimeMillis()
-                status = "Saving report and context…"
-                save(
-                    SelfReportEntity(
-                        capturedAtEpochMs = capturedAt,
-                        flowScore = flow.toInt(),
-                        absorption = absorption.toInt(),
-                        effortlessControl = effortless.toInt(),
-                        intrinsicReward = reward.toInt(),
-                        presence = presence.toInt(),
-                        fatigue = fatigue.toInt(),
-                        activityLabel = activity.trim().ifBlank { null },
-                        domain = domain.trim().ifBlank { null },
-                        taskDifficulty = difficulty.toInt().takeIf { advanced },
-                        goalClarity = goalClarity.toInt().takeIf { advanced },
-                        perceivedControl = perceivedControl.toInt().takeIf { advanced },
-                        notes = null,
-                    ),
-                )
-                status = "Report + context saved; eligible recommendation/intervention outcomes linked"
-            }
-        }) { Text("Save report") }
-
-        LearningPreview(recentReports)
-
-        val sessionState = sessionSignals(activeSession)
-        val fragmentationEvidence = fragmentationEvidenceFor(
-            current = recentContexts.firstOrNull(),
-            reports = recentReports,
-            snapshots = recentContexts,
-        )
-        val intervention = recommendIntervention(
-            latestReport = recentReports.firstOrNull(),
-            minutesOnCurrentTask = sessionState.minutesOnCurrentTask,
-            repeatedStruggle = sessionState.repeatedStruggle,
-            learnedFragmentationHarm = fragmentationEvidence.harmfulAssociation,
-            currentlyHighFragmentation = fragmentationEvidence.currentlyHigh,
-        )
-        LaunchedEffect(intervention.action, intervention.reasons, activeSession?.id, activeSession?.struggleCount) {
-            activeInterventionEventId = recordIntervention(
-                InterventionEventEntity(
-                    action = intervention.action.name,
-                    reasonsSnapshot = intervention.reasons.joinToString("|"),
-                ),
-            )
-            interventionResponse = null
-        }
-        Text("Suggested intervention", style = MaterialTheme.typography.titleLarge)
-        Text(intervention.action.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() })
-        Text(intervention.reasons.joinToString(" · "))
-        activeSession?.let { session ->
-            Text("Active session: ${session.taskTitle ?: "unassigned"} · ${sessionState.minutesOnCurrentTask ?: 0} min · struggles ${session.struggleCount}")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    scope.launch {
-                        recordStruggle(session.id)
-                        status = "Struggle marked; repeated struggle can trigger AI assistance"
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Right now", style = MaterialTheme.typography.titleLarge)
+                Text(friendlyAction(intervention.action.name), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+                Text(friendlyReason(intervention.reasons), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (activeSession != null) {
+                    Text("${activeSession.taskTitle ?: "Focus session"} · ${sessionState.minutesOnCurrentTask ?: 0} min · ${activeSession.struggleCount} struggle marks")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { scope.launch { recordStruggle(activeSession.id); status = "Struggle noted" } }) { Text("I'm stuck") }
+                        OutlinedButton(onClick = { scope.launch { endSession(activeSession.id); status = "Session ended" } }) { Text("End") }
                     }
-                }) { Text("I'm stuck") }
-                Button(onClick = {
-                    scope.launch {
-                        endSession(session.id)
-                        status = "Session ended"
+                }
+                if (interventionResponse == null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { scope.launch { activeInterventionEventId?.let { recordInterventionResponse(it, "accepted") }; interventionResponse = "accepted" } }) { Text("Do it") }
+                        TextButton(onClick = { scope.launch { activeInterventionEventId?.let { recordInterventionResponse(it, "dismissed") }; interventionResponse = "dismissed" } }) { Text("Not now") }
                     }
-                }) { Text("End session") }
+                }
             }
         }
-        if (interventionResponse == null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    scope.launch {
-                        activeInterventionEventId?.let { recordInterventionResponse(it, "accepted") }
-                        interventionResponse = "accepted"
-                        status = "Intervention accepted; next check-in will be linked as outcome"
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Best next task", style = MaterialTheme.typography.titleLarge)
+                if (topTask == null) {
+                    Text("No tasks yet. Add one when you want Flow to help choose what to do next.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick = { showTaskForm = true }) { Text("Add a task") }
+                } else {
+                    Text(topTask.task.title, style = MaterialTheme.typography.titleMedium)
+                    Text(topTask.reasons.take(2).joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (recommendationResponse == null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                scope.launch {
+                                    activeRecommendationEventId?.let { recordRecommendationResponse(it, "accepted") }
+                                    recommendationResponse = "accepted"
+                                    if (activeSession == null) startSession(SessionEntity(taskId = topTask.task.id, taskTitle = topTask.task.title, taskDomain = topTask.task.domain, startedAtEpochMs = System.currentTimeMillis()))
+                                }
+                            }) { Text("Start focus") }
+                            TextButton(onClick = { scope.launch { activeRecommendationEventId?.let { recordRecommendationResponse(it, "rejected") }; recommendationResponse = "rejected" } }) { Text("Another") }
+                        }
                     }
-                }) { Text("Accept") }
-                Button(onClick = {
-                    scope.launch {
-                        activeInterventionEventId?.let { recordInterventionResponse(it, "dismissed") }
-                        interventionResponse = "dismissed"
-                        status = "Intervention dismissed; next check-in will still record the outcome"
-                    }
-                }) { Text("Dismiss") }
+                }
             }
-        } else {
-            Text("Intervention response: $interventionResponse")
         }
 
-        Text("Tasks", style = MaterialTheme.typography.titleLarge)
-        Text("Ranking is local and transparent. Personal history, paired context, and recommendation outcomes are used only after minimum evidence thresholds are met.")
-        OutlinedTextField(value = taskTitle, onValueChange = { taskTitle = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Task title") }, singleLine = true)
-        OutlinedTextField(value = taskDomain, onValueChange = { taskDomain = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Task domain") }, singleLine = true)
-        Score("Task value", taskValue) { taskValue = it }
-        Score("Task urgency", taskUrgency) { taskUrgency = it }
-        Score("Task difficulty", taskDifficulty) { taskDifficulty = it }
-        OutlinedTextField(value = taskMinutes, onValueChange = { taskMinutes = it.filter(Char::isDigit) }, modifier = Modifier.fillMaxWidth(), label = { Text("Estimated minutes") }, singleLine = true)
-        Button(enabled = taskTitle.isNotBlank(), onClick = {
-            scope.launch {
-                addTask(
-                    TaskEntity(
-                        title = taskTitle.trim(),
-                        domain = taskDomain.trim().ifBlank { "other" },
-                        valueScore = taskValue.toInt(),
-                        urgencyScore = taskUrgency.toInt(),
-                        difficultyScore = taskDifficulty.toInt(),
-                        estimatedMinutes = taskMinutes.toIntOrNull()?.coerceAtLeast(1) ?: 30,
-                    ),
-                )
-                taskTitle = ""
-                status = "Task saved locally"
-            }
-        }) { Text("Add task") }
-
-        val ranked = rankTasks(
-            tasks = openTasks,
-            latestReport = recentReports.firstOrNull(),
-            historicalReports = recentReports,
-            currentContext = recentContexts.firstOrNull(),
-            historicalContexts = recentContexts,
-            recommendationEvents = recentRecommendations,
-        )
-        ranked.firstOrNull()?.let { recommendation ->
-            LaunchedEffect(recommendation.task.id, recommendation.score) {
-                activeRecommendationEventId = recordRecommendation(
-                    RecommendationEventEntity(
-                        taskId = recommendation.task.id,
-                        taskTitle = recommendation.task.title,
-                        taskDomain = recommendation.task.domain,
-                        score = recommendation.score,
-                        reasonsSnapshot = recommendation.reasons.joinToString("|"),
-                    ),
-                )
-                recommendationResponse = null
-            }
-
-            Text("Suggested now", style = MaterialTheme.typography.titleMedium)
-            Text(recommendation.task.title)
-            Text("Score %.1f · %s".format(recommendation.score, recommendation.reasons.joinToString(" · ")))
-            if (recommendationResponse == null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = { showCheckIn = !showCheckIn }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (showCheckIn) "Hide check-in" else "Quick check-in")
+        }
+        if (showCheckIn) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("How did that feel?", style = MaterialTheme.typography.titleLarge)
+                    Text("Takes about 20 seconds. This is the signal Flow learns from.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    CompactScore("Flow", flow) { flow = it }
+                    CompactScore("Absorption", absorption) { absorption = it }
+                    CompactScore("Effortless control", effortless) { effortless = it }
+                    CompactScore("Enjoyment", reward) { reward = it }
+                    CompactScore("Presence", presence) { presence = it }
+                    CompactScore("Fatigue", fatigue) { fatigue = it }
+                    OutlinedTextField(activity, { activity = it }, Modifier.fillMaxWidth(), label = { Text("What were you doing? (optional)") }, singleLine = true)
+                    OutlinedTextField(domain, { domain = it }, Modifier.fillMaxWidth(), label = { Text("Area of life (optional)") }, singleLine = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Switch(advanced, { advanced = it })
+                        Text("More context")
+                    }
+                    if (advanced) {
+                        CompactScore("Difficulty", difficulty) { difficulty = it }
+                        CompactScore("Goal clarity", goalClarity) { goalClarity = it }
+                        CompactScore("Control", perceivedControl) { perceivedControl = it }
+                    }
                     Button(onClick = {
                         scope.launch {
-                            activeRecommendationEventId?.let { recordRecommendationResponse(it, "accepted") }
-                            recommendationResponse = "accepted"
-                            if (activeSession == null) {
-                                startSession(
-                                    SessionEntity(
-                                        taskId = recommendation.task.id,
-                                        taskTitle = recommendation.task.title,
-                                        taskDomain = recommendation.task.domain,
-                                        startedAtEpochMs = System.currentTimeMillis(),
-                                    ),
-                                )
-                                status = "Recommendation accepted; focus session started"
-                            } else {
-                                status = "Recommendation accepted; active session already running"
+                            save(SelfReportEntity(
+                                capturedAtEpochMs = System.currentTimeMillis(), flowScore = flow.toInt(), absorption = absorption.toInt(),
+                                effortlessControl = effortless.toInt(), intrinsicReward = reward.toInt(), presence = presence.toInt(), fatigue = fatigue.toInt(),
+                                activityLabel = activity.trim().ifBlank { null }, domain = domain.trim().ifBlank { null },
+                                taskDifficulty = difficulty.toInt().takeIf { advanced }, goalClarity = goalClarity.toInt().takeIf { advanced },
+                                perceivedControl = perceivedControl.toInt().takeIf { advanced }, notes = null,
+                            ))
+                            status = "Check-in saved"
+                            showCheckIn = false
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Save check-in") }
+                }
+            }
+        }
+
+        SectionToggle("Tasks", "${openTasks.size} open", showTaskForm) { showTaskForm = !showTaskForm }
+        if (showTaskForm) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(taskTitle, { taskTitle = it }, Modifier.fillMaxWidth(), label = { Text("Task") }, singleLine = true)
+                    OutlinedTextField(taskDomain, { taskDomain = it }, Modifier.fillMaxWidth(), label = { Text("Area") }, singleLine = true)
+                    CompactScore("Value", taskValue) { taskValue = it }
+                    CompactScore("Urgency", taskUrgency) { taskUrgency = it }
+                    CompactScore("Difficulty", taskDifficulty) { taskDifficulty = it }
+                    OutlinedTextField(taskMinutes, { taskMinutes = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Minutes") }, singleLine = true)
+                    Button(enabled = taskTitle.isNotBlank(), onClick = {
+                        scope.launch {
+                            addTask(TaskEntity(title = taskTitle.trim(), domain = taskDomain.trim().ifBlank { "other" }, valueScore = taskValue.toInt(), urgencyScore = taskUrgency.toInt(), difficultyScore = taskDifficulty.toInt(), estimatedMinutes = taskMinutes.toIntOrNull()?.coerceAtLeast(1) ?: 30))
+                            taskTitle = ""
+                            status = "Task added"
+                        }
+                    }) { Text("Add task") }
+                    ranked.take(4).forEach { item ->
+                        HorizontalDivider()
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column(Modifier.weight(1f)) {
+                                Text(item.task.title)
+                                Text(item.task.domain, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            TextButton(onClick = { scope.launch { markTaskDone(item.task.id) } }) { Text("Done") }
                         }
-                    }) { Text("Accept + start") }
-                    Button(onClick = {
-                        scope.launch {
-                            activeRecommendationEventId?.let { recordRecommendationResponse(it, "rejected") }
-                            recommendationResponse = "rejected"
-                            status = "Recommendation rejected; next check-in will be linked as outcome"
-                        }
-                    }) { Text("Reject") }
-                    Button(onClick = {
-                        scope.launch {
-                            activeRecommendationEventId?.let { recordRecommendationResponse(it, "ignored") }
-                            recommendationResponse = "ignored"
-                            status = "Recommendation ignored; next check-in will be linked as outcome"
-                        }
-                    }) { Text("Ignore") }
+                    }
                 }
-            } else {
-                Text("Response recorded: $recommendationResponse")
             }
-            Button(onClick = { scope.launch { markTaskDone(recommendation.task.id) } }) { Text("Mark suggested task done") }
-        } ?: Text("No open tasks yet.")
-
-        if (ranked.size > 1) {
-            Text("Next alternatives")
-            ranked.drop(1).take(3).forEach { item -> Text("${item.task.title} · ${"%.1f".format(item.score)}") }
         }
 
-        Text("Sampling reminders", style = MaterialTheme.typography.titleLarge)
-        Text("Optional local reminders run about every 4 hours during 08:00–21:59. They can be disabled at any time.")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = {
-                if (Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                else {
-                    CheckInReminderScheduler.enable(context)
-                    status = "Check-in reminders enabled"
+        SectionToggle("Insights", insightSubtitle(recentReports), showInsights) { showInsights = !showInsights }
+        if (showInsights) LearningCard(recentReports)
+
+        SectionToggle("Health & settings", if (results.isEmpty()) "Connect sensors and diagnostics" else "Probe complete", showHealth) { showHealth = !showHealth }
+        if (showHealth) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Health Connect", style = MaterialTheme.typography.titleMedium)
+                    Text("CMF Flow reads health data locally to understand context. Nothing is uploaded.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { healthPermissionLauncher.launch(probe.permissions) }) { Text("Manage access") }
+                        Button(onClick = { scope.launch { status = "Checking health data…"; results = probe.probe(); status = "Health check complete" } }) { Text("Check sensors") }
+                    }
+                    if (results.isNotEmpty()) results.forEach { ProbeResultView(it) }
+                    HorizontalDivider()
+                    Text("Check-in reminders", style = MaterialTheme.typography.titleMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            if (Build.VERSION.SDK_INT >= 33) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            else { CheckInReminderScheduler.enable(context); status = "Reminders enabled" }
+                        }) { Text("Enable") }
+                        TextButton(onClick = { CheckInReminderScheduler.disable(context); status = "Reminders disabled" }) { Text("Disable") }
+                    }
                 }
-            }) { Text("Enable") }
-            Button(onClick = {
-                CheckInReminderScheduler.disable(context)
-                status = "Check-in reminders disabled"
-            }) { Text("Disable") }
+            }
         }
 
-        Text("Health Connect probe", style = MaterialTheme.typography.titleLarge)
-        Text("Reads the last 7 days and reports record origin plus time coverage. No health data is uploaded.")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = { healthPermissionLauncher.launch(probe.permissions) }) { Text("Grant access") }
-            Button(onClick = {
-                scope.launch {
-                    status = "Probing last 7 days…"
-                    results = probe.probe()
-                    status = "Probe complete"
-                }
-            }) { Text("Run probe") }
-        }
-
-        Text(status)
-        results.forEach { result -> ProbeResultView(result) }
+        Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
-private fun LearningPreview(reports: List<SelfReportEntity>) {
-    val summary = summarize(reports)
-    Text("Learning preview", style = MaterialTheme.typography.titleLarge)
-    if (summary.sampleCount < 5) {
-        Text("${summary.sampleCount}/5 reports collected. No personal pattern claims yet.")
-        return
+private fun StateCard(report: SelfReportEntity?, session: SessionEntity?, minutes: Long?) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (session != null) "Focus in progress" else "Your current state", style = MaterialTheme.typography.titleLarge)
+            if (session != null) {
+                Text(session.taskTitle ?: "Focused session", style = MaterialTheme.typography.headlineSmall)
+                Text("${minutes ?: 0} minutes", color = MaterialTheme.colorScheme.primary)
+            } else if (report == null) {
+                Text("Start with a quick check-in so Flow can understand today.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text("Flow ${report.flowScore}/5  ·  Presence ${report.presence}/5  ·  Fatigue ${report.fatigue}/5", style = MaterialTheme.typography.titleMedium)
+                Text("Based on your latest check-in", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
-    Text("Based on ${summary.sampleCount} local reports; descriptive only, not a prediction.")
-    Text("Average flow: ${formatScore(summary.averageFlow)} / 5")
-    Text("Average presence: ${formatScore(summary.averagePresence)} / 5")
-    Text("Average fatigue: ${formatScore(summary.averageFatigue)} / 5")
-    summary.strongestDomain?.let { Text("Highest-flow domain with ≥3 samples: $it") }
 }
 
+@Composable
+private fun SectionToggle(title: String, subtitle: String, expanded: Boolean, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(title)
+            Text(subtitle + if (expanded) " · Hide" else " · Open", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun LearningCard(reports: List<SelfReportEntity>) {
+    val summary = summarize(reports)
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("What Flow is learning", style = MaterialTheme.typography.titleLarge)
+            if (summary.sampleCount < 5) {
+                Text("${summary.sampleCount}/5 check-ins collected. A few more will unlock your first personal patterns.")
+            } else {
+                Text("Average flow ${formatScore(summary.averageFlow)} / 5")
+                Text("Average presence ${formatScore(summary.averagePresence)} / 5")
+                Text("Average fatigue ${formatScore(summary.averageFatigue)} / 5")
+                summary.strongestDomain?.let { Text("Strongest area so far: $it") }
+            }
+            Text("Insights stay descriptive until there is enough evidence.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private fun insightSubtitle(reports: List<SelfReportEntity>): String = if (reports.size < 5) "${reports.size}/5 check-ins" else "Personal patterns available"
 private fun formatScore(value: Double?): String = value?.let { "%.1f".format(it) } ?: "n/a"
+private fun friendlyAction(action: String): String = when (action) {
+    "CONTINUE" -> "Keep going"
+    "SWITCH_TASK" -> "Switch gears"
+    "REDUCE_DIFFICULTY" -> "Make it easier"
+    "ASK_AI" -> "Get a little help"
+    "BREAK" -> "Take a short break"
+    "EXERCISE" -> "Move for a few minutes"
+    "STOP" -> "Call it for now"
+    "REDUCE_INTERRUPTION" -> "Protect your attention"
+    else -> action.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }
+}
+private fun friendlyReason(reasons: List<String>): String = reasons.firstOrNull()?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: "Based on your latest state"
 
 @Composable
 private fun ProbeResultView(result: ProbeResult) {
-    val originText = if (result.origins.isEmpty()) "none" else result.origins.joinToString()
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(result.type, style = MaterialTheme.typography.titleMedium)
-        Text("Records: ${result.recordCount} · data points: ${result.dataPointCount}")
-        Text("Origins: $originText")
-        Text("Coverage: ${formatEpoch(result.earliestEpochMs)} → ${formatEpoch(result.latestEpochMs)}")
-        result.error?.let { Text("Error: $it") }
+    val label = when (result.type) {
+        "heart_rate" -> "Heart rate"
+        "oxygen_saturation" -> "Blood oxygen"
+        else -> result.type.replace('_', ' ').replaceFirstChar { it.uppercase() }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.titleSmall)
+        if (result.error != null) Text("Unavailable: ${result.error}", color = MaterialTheme.colorScheme.error)
+        else if (result.recordCount == 0) Text("No recent data", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else {
+            Text("${result.recordCount} records · latest ${formatEpoch(result.latestEpochMs)}")
+            Text(result.origins.joinToString().ifBlank { "Unknown source" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
 private fun formatEpoch(epochMs: Long?): String {
     if (epochMs == null) return "none"
-    return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(epochMs))
+    return DateTimeFormatter.ofPattern("MMM d, HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(epochMs))
 }
 
 @Composable
-private fun Score(label: String, value: Float, onValueChange: (Float) -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text("$label: ${value.toInt()}")
+private fun CompactScore(label: String, value: Float, onValueChange: (Float) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label)
+            Text("${value.toInt()}/5", color = MaterialTheme.colorScheme.primary)
+        }
         Slider(value = value, onValueChange = onValueChange, valueRange = 0f..5f, steps = 4)
     }
 }
