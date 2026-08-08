@@ -1,10 +1,8 @@
 package com.benclawbot.cmfflow.attention
 
-import android.app.AppOpsManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
-import android.os.Process
 
 data class AttentionContext(
     val usageAccessGranted: Boolean,
@@ -16,24 +14,20 @@ data class AttentionContext(
 
 class AttentionContextCollector(private val context: Context) {
     fun collect(windowStartEpochMs: Long, windowEndEpochMs: Long): AttentionContext {
-        val usageGranted = hasUsageAccess()
+        val usageGranted = AttentionAccess.hasUsageAccess(context)
         val usage = if (usageGranted) collectUsage(windowStartEpochMs, windowEndEpochMs) else null
+        val notificationCount = if (AttentionAccess.hasNotificationListenerAccess(context)) {
+            NotificationEventStore.countBetween(context, windowStartEpochMs, windowEndEpochMs) ?: 0
+        } else {
+            null
+        }
         return AttentionContext(
             usageAccessGranted = usageGranted,
             appSwitchCount = usage?.appSwitchCount,
             unlockCount = usage?.unlockCount,
             screenInteractiveTransitions = usage?.screenInteractiveTransitions,
-            notificationCount = NotificationEventStore.countBetween(context, windowStartEpochMs, windowEndEpochMs),
+            notificationCount = notificationCount,
         )
-    }
-
-    private fun hasUsageAccess(): Boolean {
-        val appOps = context.getSystemService(AppOpsManager::class.java) ?: return false
-        return appOps.checkOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            Process.myUid(),
-            context.packageName,
-        ) == AppOpsManager.MODE_ALLOWED
     }
 
     private fun collectUsage(start: Long, end: Long): UsageAggregate {
