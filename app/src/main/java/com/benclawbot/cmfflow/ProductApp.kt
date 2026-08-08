@@ -230,6 +230,13 @@ fun ProductApp(
                         }
                     },
                     onOpenTasks = { tab = ProductTab.Tasks },
+                    onCompleteTask = { id ->
+                        scope.launch {
+                            completeTask(id)
+                            if (session?.taskId == id) endSession(session.id)
+                            notify("Task completed")
+                        }
+                    },
                     onEndSession = { id -> scope.launch { endSession(id); notify("Session ended") } },
                     onStruggle = { id -> scope.launch { markStruggle(id); notify("Struggle noted") } },
                 )
@@ -240,16 +247,15 @@ fun ProductApp(
                     onDone = { id -> scope.launch { completeTask(id); notify("Task completed") } },
                     onStart = { task ->
                         scope.launch {
-                            if (session == null) {
-                                startSession(
-                                    SessionEntity(
-                                        taskId = task.id,
-                                        taskTitle = task.title,
-                                        taskDomain = task.domain,
-                                        startedAtEpochMs = System.currentTimeMillis(),
-                                    ),
-                                )
-                            }
+                            session?.let { endSession(it.id) }
+                            startSession(
+                                SessionEntity(
+                                    taskId = task.id,
+                                    taskTitle = task.title,
+                                    taskDomain = task.domain,
+                                    startedAtEpochMs = System.currentTimeMillis(),
+                                ),
+                            )
                             tab = ProductTab.Home
                             notify("Focus session started")
                         }
@@ -259,8 +265,27 @@ fun ProductApp(
                     experiments = experiments,
                     assignments = assignments,
                     reports = reports,
+                    contexts = contexts,
                     openTrial = openTrial,
-                    onAdd = { exp -> scope.launch { addExperiment(exp); notify("Experiment created") } },
+                    onAdd = { exp ->
+                        scope.launch {
+                            if (openTrial != null) {
+                                notify("Finish the current trial with a check-in first")
+                            } else {
+                                val experimentId = addExperiment(exp)
+                                val created = exp.copy(id = experimentId)
+                                val condition = chooseNextCondition(created, assignments, Random.nextBoolean())
+                                assignExperiment(
+                                    ExperimentAssignmentEntity(
+                                        experimentId = experimentId,
+                                        assignedCondition = condition,
+                                    ),
+                                )
+                                notify("Experiment started: $condition")
+                                tab = ProductTab.Home
+                            }
+                        }
+                    },
                     onComplete = { id -> scope.launch { completeExperiment(id); notify("Experiment completed") } },
                     onStartTrial = { experiment ->
                         scope.launch {
@@ -301,6 +326,7 @@ private fun ProductHomeScreen(
     onDismissIntervention: () -> Unit,
     onStartTask: () -> Unit,
     onOpenTasks: () -> Unit,
+    onCompleteTask: (Long) -> Unit,
     onEndSession: (Long) -> Unit,
     onStruggle: (Long) -> Unit,
 ) {
@@ -325,6 +351,9 @@ private fun ProductHomeScreen(
                     LinearProgressIndicator(progress = { ((sessionMinutes ?: 0) / 60f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { onStruggle(session.id) }) { Text("I'm stuck") }
+                        session.taskId?.let { taskId ->
+                            OutlinedButton(onClick = { onCompleteTask(taskId) }) { Text("Task done") }
+                        }
                         TextButton(onClick = { onEndSession(session.id) }) { Text("Finish", color = Color.White) }
                     }
                 } else {
@@ -374,10 +403,13 @@ private fun ProductHomeScreen(
                 } else {
                     Text(topTask.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("${topTask.domain.replaceFirstChar { it.uppercase() }} · ${topTask.estimatedMinutes} min", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = onStartTask) {
-                        Icon(Icons.Filled.PlayArrow, null)
-                        Spacer(Modifier.size(6.dp))
-                        Text("Start focus")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onStartTask) {
+                            Icon(Icons.Filled.PlayArrow, null)
+                            Spacer(Modifier.size(6.dp))
+                            Text("Start focus")
+                        }
+                        OutlinedButton(onClick = { onCompleteTask(topTask.id) }) { Text("Done") }
                     }
                 }
             }
@@ -394,7 +426,7 @@ private fun ProductHomeScreen(
 private fun ProductInsightsScreen(reports: List<SelfReportEntity>, contexts: List<ContextSnapshotEntity>) {
     val summary = summarize(reports)
     ProductScreenColumn {
-        ScreenHeader("Insights", "Your patterns, with early coincidences kept separate from stronger evidence.")
+        ScreenHeader("Insights", "Signals become patterns only after repeated, comparable evidence.")
         if (reports.isEmpty()) {
             EmptyCard("No insights yet", "A few quick check-ins will turn this into your personal flow map.")
             return@ProductScreenColumn
@@ -407,10 +439,19 @@ private fun ProductInsightsScreen(reports: List<SelfReportEntity>, contexts: Lis
         }
 
         ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp)) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Recent flow", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Sparkline(reports.take(30).reversed().map { it.flowScore.toFloat() })
-                Text("${reports.size.coerceAtMost(100)} recent local check-ins", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Recent flow", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                        Text(evidenceLabel(reports.size), Modifier.padding(horizontal = 10.dp, vertical = 5.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                if (reports.size >= 2) {
+                    Sparkline(reports.take(30).reversed().map { it.flowScore.toFloat() })
+                } else {
+                    Text("One check-in is not enough to draw a trend. Flow will keep this as an observation until comparable samples accumulate.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("${reports.size.coerceAtMost(100)} recent local check-ins", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -418,12 +459,17 @@ private fun ProductInsightsScreen(reports: List<SelfReportEntity>, contexts: Lis
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("What Flow is learning", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 summary.strongestDomain?.let {
-                    Text("Your strongest sampled area so far is ${it.replaceFirstChar(Char::uppercase)}.")
-                } ?: Text("Domain patterns unlock after enough comparable check-ins.")
-                contexts.firstOrNull()?.let {
+                    Text("${evidenceLabel(reports.size)} · ${it.replaceFirstChar(Char::uppercase)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    Text("This area currently has the strongest repeated signal. Flow still treats it as probabilistic rather than causal.")
+                } ?: run {
+                    Text(evidenceLabel(reports.size), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    Text("Flow needs more comparable check-ins before calling any domain a pattern.")
+                }
+                contexts.firstOrNull()?.let { context ->
                     HorizontalDivider()
-                    Text("Latest context", style = MaterialTheme.typography.titleMedium)
-                    Text(contextSummary(it), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Latest context", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(contextLearningSummary(context), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(contextSummary(context), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -431,7 +477,7 @@ private fun ProductInsightsScreen(reports: List<SelfReportEntity>, contexts: Lis
         Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Evidence guardrails", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("Personalization only activates after minimum sample thresholds and learned adjustments are capped, so a few unusual days cannot take over your recommendations.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Flow separates observations from conclusions, waits for repeated comparable samples, and caps learned adjustments so unusual days cannot dominate future recommendations.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -454,7 +500,7 @@ private fun ProductTasksScreen(
 
     ProductScreenColumn {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) { ScreenHeader("Tasks", "A state-aware queue, not a static to-do list.") }
+            Column(Modifier.weight(1f)) { ScreenHeader("Tasks", "The same state-aware queue used on Home. Changes update both views.") }
             IconButton(onClick = { adding = !adding }) { Icon(Icons.Filled.Add, "Add task") }
         }
         if (adding) {
@@ -518,21 +564,16 @@ private fun ProductExperimentsScreen(
     experiments: List<ExperimentEntity>,
     assignments: List<ExperimentAssignmentEntity>,
     reports: List<SelfReportEntity>,
+    contexts: List<ContextSnapshotEntity>,
     openTrial: ExperimentAssignmentEntity?,
     onAdd: (ExperimentEntity) -> Unit,
     onComplete: (Long) -> Unit,
     onStartTrial: (ExperimentEntity) -> Unit,
 ) {
-    var adding by remember { mutableStateOf(false) }
-    var hypothesis by remember { mutableStateOf("") }
-    var conditionA by remember { mutableStateOf("") }
-    var conditionB by remember { mutableStateOf("") }
+    var suggestionDismissed by remember { mutableStateOf(false) }
 
     ProductScreenColumn {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) { ScreenHeader("Experiments", "Balanced randomized N-of-1 trials, linked to your next check-in.") }
-            IconButton(onClick = { adding = !adding }) { Icon(Icons.Filled.Add, "Add experiment") }
-        }
+        ScreenHeader("Experiments", "Flow proposes balanced N-of-1 trials when your data supports something worth testing.")
 
         if (openTrial != null) {
             ElevatedCard(
@@ -543,40 +584,40 @@ private fun ProductExperimentsScreen(
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Trial in progress", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(openTrial.assignedCondition, style = MaterialTheme.typography.headlineSmall)
-                    Text("Your next check-in records the outcome. Start another trial only after that.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Your next check-in records the outcome automatically. Flow will keep the result separate from stronger evidence until enough balanced trials accumulate.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
 
-        if (adding) {
+        val canSuggest = experiments.isEmpty() && openTrial == null && reports.size >= 3 && !suggestionDismissed
+        if (canSuggest) {
+            val suggestion = suggestedExperiment(reports, contexts)
             ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp)) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(hypothesis, { hypothesis = it }, Modifier.fillMaxWidth(), label = { Text("What do you want to test?") })
-                    OutlinedTextField(conditionA, { conditionA = it }, Modifier.fillMaxWidth(), label = { Text("Condition A") })
-                    OutlinedTextField(conditionB, { conditionB = it }, Modifier.fillMaxWidth(), label = { Text("Condition B") })
-                    Button(
-                        enabled = hypothesis.isNotBlank() && conditionA.isNotBlank() && conditionB.isNotBlank(),
-                        onClick = {
-                            onAdd(
-                                ExperimentEntity(
-                                    hypothesis = hypothesis.trim(),
-                                    conditionA = conditionA.trim(),
-                                    conditionB = conditionB.trim(),
-                                ),
-                            )
-                            hypothesis = ""
-                            conditionA = ""
-                            conditionB = ""
-                            adding = false
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Create experiment") }
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("SUGGESTED EXPERIMENT", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    Text(suggestion.hypothesis, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("A · ${suggestion.conditionA}", fontWeight = FontWeight.SemiBold)
+                            Text("B · ${suggestion.conditionB}", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    Text("Why this? ${suggestionReason(reports, contexts)}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text("Flow is proposing a test, not claiming the observed signal is causal.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onAdd(suggestion) }, modifier = Modifier.weight(1f)) { Text("Start experiment") }
+                        TextButton(onClick = { suggestionDismissed = true }) { Text("Not now") }
+                    }
                 }
             }
         }
 
-        if (experiments.isEmpty()) {
-            EmptyCard("No active experiments", "Try “Does a 5-minute walk improve my next focus block?” or “Does asking AI earlier reduce fatigue?”")
+        if (experiments.isEmpty() && openTrial == null && !canSuggest) {
+            if (reports.size < 3) {
+                EmptyCard("Flow is still learning", "Keep checking in. Flow will propose an experiment once there are enough comparable observations to justify a test.")
+            } else {
+                EmptyCard("No experiment running", "Flow will keep watching for a useful test. You do not need to design one yourself.")
+            }
         }
 
         experiments.forEach { experiment ->
@@ -593,7 +634,7 @@ private fun ProductExperimentsScreen(
                         Text("Estimated utility difference A−B: ${"%.2f".format(result.deltaAminusB)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                     }
                     Button(enabled = openTrial == null, onClick = { onStartTrial(experiment) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (openTrial == null) "Start randomized trial" else "Finish current trial first")
+                        Text(if (openTrial == null) "Run next balanced trial" else "Finish current trial first")
                     }
                     TextButton(onClick = { onComplete(experiment.id) }) { Text("Archive experiment") }
                 }
@@ -815,8 +856,8 @@ private fun StateMetric(label: String, value: Int?, modifier: Modifier) {
 private fun InsightMetric(label: String, value: String, color: Color, modifier: Modifier) {
     Surface(modifier, shape = RoundedCornerShape(22.dp), color = color) {
         Column(Modifier.padding(14.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(label, color = Color(0xFF3B3543), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+            Text(value, color = Color(0xFF17131C), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -973,6 +1014,67 @@ private fun friendlyTaskReasons(reasons: List<String>): String {
         }
     }.distinct().take(3)
     return if (useful.isEmpty()) "Ranked from value, urgency and difficulty fit." else useful.joinToString(" · ")
+}
+
+private fun evidenceLabel(sampleCount: Int): String = when {
+    sampleCount >= 12 -> "Stronger evidence"
+    sampleCount >= 5 -> "Emerging pattern"
+    else -> "Early signal"
+}
+
+private fun contextLearningSummary(context: ContextSnapshotEntity): String = when {
+    (context.appSwitchCount ?: 0) >= 25 -> "The latest sample had high app switching. Flow will look for the same relationship across more outcomes before using it as a learned factor."
+    (context.notificationCount ?: 0) >= 10 -> "The latest sample had many notifications. That is useful context, but not evidence that notifications caused the reported state."
+    (context.sleepMinutesPrevious24h ?: Long.MAX_VALUE) < 360L -> "The latest sample followed a shorter sleep window. Flow keeps this as context until repeated comparable check-ins support a pattern."
+    else -> "Flow captured surrounding context for this check-in and will only promote repeated relationships into personalization."
+}
+
+private fun suggestedExperiment(
+    reports: List<SelfReportEntity>,
+    contexts: List<ContextSnapshotEntity>,
+): ExperimentEntity {
+    val recent = reports.take(5)
+    val averageFatigue = recent.map { it.fatigue }.average()
+    val averagePresence = recent.map { it.presence }.average()
+    val context = contexts.firstOrNull()
+    return when {
+        (context?.appSwitchCount ?: 0) >= 25 || (context?.notificationCount ?: 0) >= 10 -> ExperimentEntity(
+            hypothesis = "Does protecting the start of my next focus block from interruptions improve presence?",
+            conditionA = "Use 10 interruption-free minutes first",
+            conditionB = "Continue normally",
+        )
+        averageFatigue >= 3.5 -> ExperimentEntity(
+            hypothesis = "Does a short movement break reduce fatigue in my next focus block?",
+            conditionA = "Take a 5-minute movement break first",
+            conditionB = "Continue normally",
+        )
+        averagePresence <= 2.5 -> ExperimentEntity(
+            hypothesis = "Does a protected start improve presence in my next focus block?",
+            conditionA = "Put the phone aside for the first 10 minutes",
+            conditionB = "Continue normally",
+        )
+        else -> ExperimentEntity(
+            hypothesis = "Does a 5-minute walk improve my next focus block?",
+            conditionA = "Take a 5-minute walk first",
+            conditionB = "Continue normally",
+        )
+    }
+}
+
+private fun suggestionReason(
+    reports: List<SelfReportEntity>,
+    contexts: List<ContextSnapshotEntity>,
+): String {
+    val recent = reports.take(5)
+    val averageFatigue = recent.map { it.fatigue }.average()
+    val averagePresence = recent.map { it.presence }.average()
+    val context = contexts.firstOrNull()
+    return when {
+        (context?.appSwitchCount ?: 0) >= 25 || (context?.notificationCount ?: 0) >= 10 -> "Your latest context contained substantial attention fragmentation, so Flow can test whether protecting the start of a block changes the outcome."
+        averageFatigue >= 3.5 -> "Recent check-ins show elevated fatigue, making a short movement break a useful low-cost intervention to test."
+        averagePresence <= 2.5 -> "Recent check-ins show lower presence, so Flow can test whether reducing early interruptions changes the next outcome."
+        else -> "There are enough recent check-ins to test a small, reversible intervention without treating an early correlation as a conclusion."
+    }
 }
 
 private fun contextSummary(context: ContextSnapshotEntity): String {
