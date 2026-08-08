@@ -1,0 +1,93 @@
+name: Issue 1 health validation diagnostics
+
+on:
+  push:
+    branches: [issue-1-health-validation-diagnostics]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: issue-1-health-validation-diagnostics
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Improve Health Connect validation diagnostics
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/benclawbot/cmfflow/ProductApp.kt')
+          text = path.read_text()
+          old = '''@Composable
+private fun HealthResultRow(result: ProbeResult) {
+    val ok = result.error == null && result.recordCount > 0
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Icon(if (ok) Icons.Filled.CheckCircle else Icons.Filled.Favorite, null, tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.size(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(result.type.replace('_', ' ').replaceFirstChar(Char::uppercase), fontWeight = FontWeight.SemiBold)
+            Text(
+                if (result.error != null) "Unavailable" else "${result.recordCount} records · ${formatEpochShort(result.latestEpochMs)}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+'''
+          new = '''@Composable
+private fun HealthResultRow(result: ProbeResult) {
+    val ok = result.error == null && result.recordCount > 0
+    val summary = when {
+        result.error != null -> "Unavailable · ${result.error}"
+        result.recordCount == 0 -> "No records in the last 7 days"
+        else -> "${result.recordCount} records · ${result.dataPointCount} points · latest ${formatEpochShort(result.latestEpochMs)}"
+    }
+    Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+        Icon(if (ok) Icons.Filled.CheckCircle else Icons.Filled.Favorite, null, tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.size(10.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(result.type.replace('_', ' ').replaceFirstChar(Char::uppercase), fontWeight = FontWeight.SemiBold)
+            Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            if (result.origins.isNotEmpty()) {
+                Text("Source · ${result.origins.sorted().joinToString()}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+            healthValidationHint(result)?.let { hint ->
+                Text(hint, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+private fun healthValidationHint(result: ProbeResult): String? = when (result.type) {
+    "heart_rate" -> "Validation: measure heart rate now, sync Nothing X, rerun diagnostics, and confirm the latest time advances to the fresh measurement."
+    "exercise" -> "Validation: record a short workout, sync Nothing X, rerun diagnostics, and confirm an exercise record appears with the new time."
+    else -> null
+}
+'''
+          if old not in text:
+              raise SystemExit('HealthResultRow anchor not found')
+          path.write_text(text.replace(old, new, 1))
+      - name: Lint, test and build
+        run: gradle --no-daemon :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+      - name: Remove temporary workflow
+        run: rm .github/workflows/issue-1-diagnostics.yml
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Improve Health Connect validation diagnostics"
+          git push origin HEAD:issue-1-health-validation-diagnostics
