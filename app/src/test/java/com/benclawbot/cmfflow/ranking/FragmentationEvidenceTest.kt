@@ -8,13 +8,14 @@ import org.junit.Test
 
 class FragmentationEvidenceTest {
     @Test
-    fun sparseHistoryDoesNotClaimHarm() {
+    fun sparseHistoryDoesNotClaimHarmOrCurrentHigh() {
         val reports = (1L..6L).map { report(it, 4, 4, 2) }
         val snapshots = (1L..6L).map { snapshot(it, switches = it.toInt()) }
 
         val result = fragmentationEvidenceFor(snapshots.last(), reports, snapshots)
 
         assertFalse(result.harmfulAssociation)
+        assertFalse(result.currentlyHigh)
         assertTrue(result.adjustment == 0.0)
     }
 
@@ -30,6 +31,7 @@ class FragmentationEvidenceTest {
         val result = fragmentationEvidenceFor(snapshots.last(), reports, snapshots)
 
         assertTrue(result.harmfulAssociation)
+        assertTrue(result.currentlyHigh)
         assertTrue(result.adjustment < 0.0)
         assertTrue(result.adjustment >= -0.8)
     }
