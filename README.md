@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/cmf-flow-banner.svg" alt="CMF Flow" width="100%" />
+</p>
+
 # CMF Flow
 
 CMF Flow is a local-first Android app that helps one person learn the conditions that support subjective flow while protecting against cumulative fatigue.
