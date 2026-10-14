@@ -41,23 +41,28 @@ class HealthConnectProbe(private val context: Context) {
                     records = records,
                     instants = records.flatMap { it.samples.map { sample -> sample.time } },
                     dataPointCount = records.sumOf { it.samples.size },
+                    perRecordTimes = { record -> record.samples.map { sample -> sample.time } },
                 )
             }.getOrElse { errorResult("heart_rate", it) },
             runCatching {
                 val records = readAll(client, SleepSessionRecord::class, range)
-                result("sleep", records, records.flatMap { listOf(it.startTime, it.endTime) })
+                result("sleep", records, records.flatMap { listOf(it.startTime, it.endTime) },
+                    perRecordTimes = { listOf(it.startTime, it.endTime) })
             }.getOrElse { errorResult("sleep", it) },
             runCatching {
                 val records = readAll(client, StepsRecord::class, range)
-                result("steps", records, records.flatMap { listOf(it.startTime, it.endTime) })
+                result("steps", records, records.flatMap { listOf(it.startTime, it.endTime) },
+                    perRecordTimes = { listOf(it.startTime, it.endTime) })
             }.getOrElse { errorResult("steps", it) },
             runCatching {
                 val records = readAll(client, OxygenSaturationRecord::class, range)
-                result("oxygen_saturation", records, records.map { it.time })
+                result("oxygen_saturation", records, records.map { it.time },
+                    perRecordTimes = { listOf(it.time) })
             }.getOrElse { errorResult("oxygen_saturation", it) },
             runCatching {
                 val records = readAll(client, ExerciseSessionRecord::class, range)
-                result("exercise", records, records.flatMap { listOf(it.startTime, it.endTime) })
+                result("exercise", records, records.flatMap { listOf(it.startTime, it.endTime) },
+                    perRecordTimes = { listOf(it.startTime, it.endTime) })
             }.getOrElse { errorResult("exercise", it) },
         )
     }
@@ -88,15 +93,35 @@ class HealthConnectProbe(private val context: Context) {
         records: List<T>,
         instants: List<Instant>,
         dataPointCount: Int = records.size,
-    ): ProbeResult = ProbeResult(
-        type = name,
-        recordCount = records.size,
-        dataPointCount = dataPointCount,
-        origins = records.map { it.metadata.dataOrigin.packageName }.toSet(),
-        earliestEpochMs = instants.minOrNull()?.toEpochMilli(),
-        latestEpochMs = instants.maxOrNull()?.toEpochMilli(),
-        error = null,
-    )
+        perRecordTimes: (T) -> List<Instant>,
+    ): ProbeResult {
+        // Do not attribute a recent HR sample from another app to Nothing X.
+        val latestByOrigin = records.groupBy { it.metadata.dataOrigin.packageName }
+            .mapNotNull { (origin, entries) ->
+                entries.flatMap(perRecordTimes).maxOrNull()?.toEpochMilli()?.let { origin to it }
+            }
+            .toMap()
+        // Keep the actual exercise windows so a known watch workout can be matched
+        // by start/end time, rather than inferring export from an arbitrary record.
+        val sessions = records.filterIsInstance<ExerciseSessionRecord>().map {
+            WatchExerciseSession(
+                originPackage = it.metadata.dataOrigin.packageName,
+                startEpochMs = it.startTime.toEpochMilli(),
+                endEpochMs = it.endTime.toEpochMilli(),
+            )
+        }
+        return ProbeResult(
+            type = name,
+            recordCount = records.size,
+            dataPointCount = dataPointCount,
+            origins = records.map { it.metadata.dataOrigin.packageName }.toSet(),
+            earliestEpochMs = instants.minOrNull()?.toEpochMilli(),
+            latestEpochMs = instants.maxOrNull()?.toEpochMilli(),
+            error = null,
+            latestByOriginEpochMs = latestByOrigin,
+            exerciseSessions = sessions,
+        )
+    }
 
     private fun errorResult(name: String, throwable: Throwable) = ProbeResult(
         type = name,
@@ -117,4 +142,12 @@ data class ProbeResult(
     val earliestEpochMs: Long?,
     val latestEpochMs: Long?,
     val error: String?,
+    val latestByOriginEpochMs: Map<String, Long> = emptyMap(),
+    val exerciseSessions: List<WatchExerciseSession> = emptyList(),
+)
+
+data class WatchExerciseSession(
+    val originPackage: String,
+    val startEpochMs: Long,
+    val endEpochMs: Long,
 )
