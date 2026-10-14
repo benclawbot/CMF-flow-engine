@@ -1088,6 +1088,23 @@ private fun HealthResultRow(result: ProbeResult) {
             if (result.origins.isNotEmpty()) {
                 Text("Source · ${result.origins.sorted().joinToString()}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
+            if (result.type == "heart_rate") {
+                val recency = com.benclawbot.cmfflow.health.WatchValidation
+                    .heartRateRecencyMinutes(result, System.currentTimeMillis())
+                if (recency != null) {
+                    Text("Nothing X latest HR · ${formatEpochShort(result.latestByOriginEpochMs[com.benclawbot.cmfflow.health.WatchValidation.NOTHING_X])} · ${recency} min ago",
+                        color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (result.type == "exercise") {
+                val windows = result.exerciseSessions.filter {
+                    it.originPackage == com.benclawbot.cmfflow.health.WatchValidation.NOTHING_X
+                }.sortedByDescending { it.endEpochMs }.take(3)
+                windows.forEach { session ->
+                    Text("Nothing X workout · ${formatEpochShort(session.startEpochMs)} – ${formatEpochShort(session.endEpochMs)}",
+                        color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                }
+            }
             healthValidationHint(result)?.let { hint ->
                 Text(hint, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
             }
