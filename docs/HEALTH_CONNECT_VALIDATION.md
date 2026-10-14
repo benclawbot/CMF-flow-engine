@@ -24,3 +24,28 @@ Stress, Active Score, and Training Load are vendor-specific concepts and are not
 ## Ingestion decision
 
 Health Connect is sufficient as the default MVP ingestion path for heart rate, sleep, steps, and SpO₂. Direct BLE/Gadgetbridge-derived ingestion should therefore not be a prerequisite for the MVP. It remains a later optional provider if exercise fails to export or if stress, Active Score, Training Load, lower-latency data, or higher-resolution raw signals prove valuable enough to justify the maintenance cost.
+
+
+## Per-origin diagnostic evidence
+
+The probe now reports **latest measurement timestamps per Health Connect data origin**.
+The Settings screen labels the most recent heart-rate sample attributed specifically
+to `com.nothing.smartcenter` and its elapsed time, avoiding false conclusions
+when another connected app exports a fresher sample. For exercise, it displays
+the latest Nothing X session start/end windows.
+
+To complete issue #1 on the actual watch and phone:
+
+1. Note the time, trigger a fresh heart-rate measurement, sync Nothing X,
+   and run Settings → Run diagnostics. Record the displayed **Nothing X latest HR**
+   time and minutes of recency.
+2. Note the start/end time of one short workout on the Watch Pro 2. Sync Nothing X,
+   rerun diagnostics, and compare the **Nothing X workout** time window.
+3. If the matching workout is absent, record that as an observed non-export for
+   this watch/firmware/sync configuration rather than claiming an export.
+4. Attach the redacted observations and firmware/app versions to issue #1.
+   The software tests check matching logic only and cannot substitute for
+   readings from a physical watch.
+
+Only timestamps and source packages are displayed; no watch data is uploaded
+by these diagnostics.
