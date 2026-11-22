@@ -28,6 +28,12 @@ The 1.0 product includes:
 - Local Room persistence with non-destructive migrations.
 - Android backup disabled so the app database is not included in normal app backup flows.
 
+## Encrypted local backup
+
+From **Settings → Encrypted backup**, users can create a passphrase-protected local archive, preview its contents by category, and explicitly confirm a restore that replaces local data transactionally. The archive uses AES-256-GCM and PBKDF2-HMAC-SHA256 with fresh random salt/nonce on every export. Choose a private destination and keep the passphrase safe: there is no recovery mechanism for a forgotten passphrase.
+
+See [encrypted backup details and device-validation requirements](docs/ENCRYPTED-EXPORT-DESIGN.md). This is opt-in and does not re-enable Android automatic backup or send data to a cloud provider.
+
 ## Privacy model
 
 CMF Flow is designed for personal, local-first use.
