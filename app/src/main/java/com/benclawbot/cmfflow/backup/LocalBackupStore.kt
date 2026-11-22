@@ -1,6 +1,5 @@
 package com.benclawbot.cmfflow.backup
 
-import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.benclawbot.cmfflow.data.FlowDatabase
 import org.json.JSONArray
@@ -40,7 +39,7 @@ class LocalBackupStore(private val database: FlowDatabase) {
             for (table in tables) {
                 val columns = columnNames(sql, table)
                 val columnList = JSONArray()
-                columns.forEach(columnList::put)
+                columns.forEach { columnList.put(it) }
                 val rows = JSONArray()
                 sql.query("SELECT * FROM " + table).use { cursor ->
                     while (cursor.moveToNext()) {
@@ -75,7 +74,11 @@ class LocalBackupStore(private val database: FlowDatabase) {
 
     fun previewEncryptedArchive(bytes: ByteArray, password: CharArray): BackupPreview {
         val plaintext = EncryptedBackupCodec.decrypt(bytes, password)
-        val json = JSONObject(String(plaintext, Charsets.UTF_8))
+        val json = try {
+            JSONObject(String(plaintext, Charsets.UTF_8))
+        } finally {
+            plaintext.fill(0)
+        }
         require(json.getInt("archiveVersion") == 1) { "Unsupported backup format" }
         require(json.getInt("schemaVersion") == schema) {
             "This backup requires a different database schema"
