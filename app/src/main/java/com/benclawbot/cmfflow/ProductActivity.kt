@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import android.content.Intent
+import com.benclawbot.cmfflow.backup.BackupActivity
 import com.benclawbot.cmfflow.health.HealthConnectProbe
 import com.benclawbot.cmfflow.health.HealthContextCollector
 import com.benclawbot.cmfflow.reminders.CheckInReminderScheduler
@@ -58,6 +60,7 @@ class ProductActivity : ComponentActivity() {
                     addExperiment = { database.experimentDao().insert(it) },
                     completeExperiment = { database.experimentDao().complete(it) },
                     assignExperiment = { database.experimentAssignmentDao().insert(it) },
+                    openBackup = { startActivity(Intent(this@ProductActivity, BackupActivity::class.java)) },
                 )
             }
         }

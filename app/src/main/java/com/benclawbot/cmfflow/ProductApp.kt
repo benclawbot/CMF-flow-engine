@@ -131,6 +131,7 @@ fun ProductApp(
     addExperiment: suspend (ExperimentEntity) -> Long,
     completeExperiment: suspend (Long) -> Unit,
     assignExperiment: suspend (ExperimentAssignmentEntity) -> Long,
+    openBackup: () -> Unit,
 ) {
     var tab by remember { mutableStateOf(ProductTab.Home) }
     val scope = rememberCoroutineScope()
@@ -373,7 +374,7 @@ fun ProductApp(
                         }
                     },
                 )
-                ProductTab.Settings -> ProductSettingsScreen(probe, notify)
+                ProductTab.Settings -> ProductSettingsScreen(probe, notify, openBackup)
             }
         }
     }
@@ -799,7 +800,7 @@ private fun ProductExperimentsScreen(
 }
 
 @Composable
-private fun ProductSettingsScreen(probe: HealthConnectProbe, notify: (String) -> Unit) {
+private fun ProductSettingsScreen(probe: HealthConnectProbe, notify: (String) -> Unit, openBackup: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var results by remember { mutableStateOf<List<ProbeResult>>(emptyList()) }
@@ -850,6 +851,10 @@ private fun ProductSettingsScreen(probe: HealthConnectProbe, notify: (String) ->
                     notify("Check-in reminders disabled")
                 }) { Text("Disable") }
             }
+        }
+        SettingsCard("Encrypted backup", "Export a passphrase-protected archive or restore with an explicit preview and confirmation.") {
+            OutlinedButton(onClick = openBackup) { Text("Open encrypted backup and restore") }
+            Text("Backup files may contain sensitive health aggregates; protect your passphrase.", style = MaterialTheme.typography.bodySmall)
         }
         SettingsCard("Privacy", "CMF Flow is local-first. Your current product build does not require a cloud account.") {
             PrivacyLine("Health context stays on this device")

@@ -18,6 +18,9 @@ android {
     }
 
     buildFeatures { compose = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -48,4 +51,11 @@ dependencies {
     ksp("androidx.room:room-compiler:2.8.4")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+}
+
+// Use Maven Central's canonical endpoint for Robolectric's runtime Android SDK.
+// Gradle dependencies already resolve here; repo1.maven.org may reject CI traffic.
+tasks.withType<Test>().configureEach {
+    systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
 }

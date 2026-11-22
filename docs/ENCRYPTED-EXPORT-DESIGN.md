@@ -1,27 +1,31 @@
-# Optional encrypted export: implementation plan
+# Encrypted local export and restore
 
-**Status: design proposal, not a shipped feature.** CMF Flow is local-first and Android automatic backup is disabled by default. Export must be explicit, user-initiated, and opt-in.
+**Status:** Opt-in encrypted backup implementation on the app's Settings screen. No automatic backup or cloud account. Validate a round-trip on a physical device before treating a backup as your only recovery copy.
 
-## Proposed user flow
+## Using it
 
-1. In Settings choose **Export an encrypted backup**.
-2. Explain which data categories will be included: task and experiment history, check-ins, local learning state, and any stored health aggregates. Never export raw notification text or package transition history (the app does not store those).
-3. Ask the user for a fresh passphrase and show a separate recovery warning. Do not persist the passphrase.
-4. Use Android Storage Access Framework (ACTION_CREATE_DOCUMENT) to write an encrypted versioned archive only to the location selected by the user.
-5. Offer a **preview-only import** through ACTION_OPEN_DOCUMENT, display archive version, counts and categories, and require explicit confirmation before changing a database.
-6. Validate a backup and restore on physical Android hardware, including interruption, large files and low-storage failure.
+1. Open **Settings → Encrypted backup**.
+2. Choose a passphrase of at least 12 characters, and confirm it. If you lose the passphrase, **the archive cannot be recovered**.
+3. Choose **Export encrypted backup** and select your destination through Android's Storage Access Framework.
+4. To restore, enter the passphrase, choose **Open encrypted backup and preview restore**, select the .cmfbak file, review the record count, and explicitly confirm **Replace local data**. Existing local data is overwritten only after a successful decryption and schema check.
+5. Keep the original backup in a safe location until a separate restore on a test device has succeeded.
 
-## Threat and format requirements
+An exported archive contains all local Room tables: check-ins, task state, experiment history and assignments, session data, recommendation/intervention records, and stored context aggregates (including health-derived summaries). No notification text or raw app-switch history is added. A chosen document provider may sync the encrypted file to the cloud if **you** select one.
 
-- Use a maintained authenticated-encryption implementation (AES-256-GCM or equivalent) and a memory-hard passphrase KDF (Argon2id or a documented Android-supported alternative) with per-export random salt, nonce and KDF parameters stored in a versioned header.
-- Authenticate metadata, prevent path traversal if archiving files, limit decoded size, and refuse unknown versions.
-- Never stream plaintext to logs, crash reports, analytics, third-party services or shared storage.
-- Use transactional restore into a temporary database with integrity/schema checks before swapping into the app's live storage.
-- Preserve the privacy model: no cloud account, no scheduled upload, no default automatic backup.
-- Document that losing the passphrase makes recovery impossible.
+## Cryptography and format
 
-## Verification gate before release
+The portable archive is versioned (\`CMFBK001\`) and encrypted with **AES-256-GCM**. A fresh 16-byte salt and 12-byte nonce are generated for every export. The passphrase derives a key using **PBKDF2-HMAC-SHA256 with 600,000 iterations**, an Android API 28-compatible platform primitive used instead of Argon2id. The entire archive header, including format version and KDF parameters, is authenticated as GCM additional data. Decryption rejects corruption or incorrect passphrases without returning partial data.
 
-Unit tests for KDF/header compatibility, corrupt/wrong-passphrase archives, nonce uniqueness, upgrade migrations, round-trip data fidelity, interrupted writes and rollback. Run Android lint, all Room migration tests, UI automation, and a real-device export/import drill.
+Limits: 8 MiB unencrypted JSON snapshot; 30,000 rows total; 8 MiB plus header/tag ciphertext. Unknown archive formats, altered headers, invalid table names/columns, extra tables and mismatching Room schema versions fail closed.
 
-The existing disabled-Android-backup behavior should remain unchanged until the feature is fully implemented and independently reviewed.
+## Restore boundaries
+
+A user-confirmed restore validates all table/column shapes before replacing data in a single Room database transaction. Any SQL constraint or storage error rolls the transaction back. The import does not execute arbitrary SQL from the archive, does not write files supplied by the archive, and does not request network permissions.
+
+Do not open backups from untrusted sources. The file still contains sensitive data, even though its contents are encrypted; protect both the archive and the passphrase. A cancelled document picker leaves existing local data unchanged.
+
+## Remaining release validation
+
+Cryptographic unit tests cover round-trips, wrong passphrases, tampering, nonce uniqueness, and archive limits. Android CI covers Kotlin compilation, tests, lint and APK build. A physical Android device test must still verify a populated database restore, low-storage interruption, process death, and recovery after application upgrade. The export/import workflow should not be treated as a validated disaster-recovery solution until that drill is completed.
+
+Automatic Android app backup remains disabled, and no cloud service is introduced.
