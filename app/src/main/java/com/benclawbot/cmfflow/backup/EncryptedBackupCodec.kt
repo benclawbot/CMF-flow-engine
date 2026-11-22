@@ -31,8 +31,8 @@ object EncryptedBackupCodec {
     fun encrypt(plaintext: ByteArray, password: CharArray): ByteArray {
         require(password.size >= 12) { "Use a passphrase of at least 12 characters" }
         require(plaintext.size <= MAX_PLAINTEXT_BYTES) { "Backup data exceeds the 8 MiB limit" }
-        val salt = ByteArray(saltBytes).also(SecureRandom()::nextBytes)
-        val nonce = ByteArray(nonceBytes).also(SecureRandom()::nextBytes)
+        val salt = ByteArray(saltBytes).also { SecureRandom().nextBytes(it) }
+        val nonce = ByteArray(nonceBytes).also { SecureRandom().nextBytes(it) }
         val header = ByteBuffer.allocate(headerBytes)
             .put(magic).put(version).putInt(iterations).put(salt).put(nonce).array()
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -46,13 +46,13 @@ object EncryptedBackupCodec {
             "Invalid or oversized CMF Flow encrypted backup"
         }
         val bytes = ByteBuffer.wrap(archive)
-        val observedMagic = ByteArray(magic.size).also(bytes::get)
+        val observedMagic = ByteArray(magic.size).also { bytes.get(it) }
         require(observedMagic.contentEquals(magic)) { "Not a CMF Flow encrypted backup" }
         require(bytes.get() == version) { "Unsupported encrypted backup version" }
         val rounds = bytes.int
         require(rounds in 500_000..1_000_000) { "Unsupported backup key-derivation settings" }
-        val salt = ByteArray(saltBytes).also(bytes::get)
-        val nonce = ByteArray(nonceBytes).also(bytes::get)
+        val salt = ByteArray(saltBytes).also { bytes.get(it) }
+        val nonce = ByteArray(nonceBytes).also { bytes.get(it) }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, derive(password, salt, rounds), GCMParameterSpec(tagBits, nonce))
         cipher.updateAAD(archive, 0, headerBytes)
