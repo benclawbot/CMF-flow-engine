@@ -4,6 +4,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.benclawbot.cmfflow.data.FlowDatabase
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.Callable
 
 data class BackupPreview(
     val createdAtEpochMs: Long,
@@ -31,7 +32,7 @@ class LocalBackupStore(private val database: FlowDatabase) {
     private val maxRecords = 30_000
 
     fun createEncryptedArchive(password: CharArray): ByteArray {
-        val payload: ByteArray = database.runInTransaction {
+        val payload: ByteArray = database.runInTransaction(Callable {
             val sql = database.openHelper.writableDatabase
             require(sql.version == schema) { "Unsupported local database schema" }
             val allTables = JSONObject()
@@ -68,7 +69,7 @@ class LocalBackupStore(private val database: FlowDatabase) {
                 .put("tables", allTables)
                 .toString()
                 .toByteArray(Charsets.UTF_8)
-        }
+        })
         return EncryptedBackupCodec.encrypt(payload, password)
     }
 
