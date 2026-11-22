@@ -146,7 +146,11 @@ private fun BackupScreen(store: LocalBackupStore, context: Context, onClose: () 
                     "This permanently replaces current tasks, check-ins, health aggregates, " +
                         "sessions, recommendations and experiments. The restored backup contains " +
                         preview.recordCounts.values.sum() + " records. There is no undo. " +
-                        "The existing database will be preserved if the import fails."
+                        "The existing database will be preserved if the import fails." +
+                        "\n\nPreview by category:\n" +
+                        preview.recordCounts.entries.joinToString("\n") { entry ->
+                            entry.key.replace('_', ' ') + ": " + entry.value
+                        }
                 )
             },
             confirmButton = {
