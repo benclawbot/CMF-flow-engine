@@ -50,9 +50,12 @@ The supported product path is:
 
 Real-device validation has confirmed Nothing X origin package `com.nothing.smartcenter` for the supported exported signals. Direct BLE/Gadgetbridge ingestion is not required for the 1.0 product and is reserved for possible future vendor-only metrics or lower-latency research.
 
-The remaining hardware-only checks are tracked in GitHub issue #1 and do not block the software release candidate.
+Hardware-validation issue [#1](https://github.com/benclawbot/CMF-flow-engine/issues/1) is closed; its results are documented in the issue. Device compatibility still varies with firmware and Health Connect availability.
 
 ## Development
+
+An optional, user-controlled encrypted export/import is being evaluated; it is **not** a shipped feature. See [encrypted export design](docs/ENCRYPTED-EXPORT-DESIGN.md) for requirements and validation gates.
+
 
 Requirements:
 
